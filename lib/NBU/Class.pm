@@ -17,7 +17,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.8 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.9 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -42,6 +42,27 @@ sub new {
   }
   return $class;
 }
+
+my %classTypes = (
+  0 => "Standard",
+  3 => "Apollo_WBAK",
+  4 => "OBackup",
+  6 => "Informix",
+  7 => "Sybase",
+  10 => "NetWare",
+  11 => "BackTrack",
+  12 => "Auspex_Fastback",
+  13 => "Windows_NT",
+  14 => "OS2",
+  15 => "SQL_Server",
+  16 => "Exchange",
+  17 => "SAP",
+  18 => "DB2",
+  19 => "NDMP",
+  20 => "FlashBackup",
+  21 => "SplitMirror",
+  22 => "AFS",
+);
 
 sub populate {
   shift;

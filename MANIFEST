@@ -1,6 +1,7 @@
 MANIFEST
 MANIFEST.SKIP
 README
+CHANGES
 INSTALL
 TODO
 Makefile.PL
@@ -23,11 +24,12 @@ examples/class-list.pl
 examples/client-list.pl
 examples/config.pl
 examples/coverage.pl
-examples/drivewatch.pl
+examples/drive-watch.pl
 examples/freeze.pl
 examples/history.pl
 examples/joblog.pl
 examples/js.pl
+examples/nbutop.pl
 examples/pool-list.pl
 examples/robot-snapshot.pl
 examples/robot-status.pl

@@ -39,8 +39,8 @@ for my $robot (NBU::Robot->farm) {
   my $volumeCount = 0;
   my $cleanCount = 0;  my $cleanings = 0;
   my %poolCount;
-  my %emptyCount;
-  my %fullCount;
+  my %emptyCount;  my %fullCount;
+  my %frozenCount;
 
   my $oldest;
   for my $position (1..$robot->capacity) {
@@ -52,7 +52,7 @@ for my $robot (NBU::Robot->farm) {
       $volumeCount += 1;
       $slot = "$prefix$position\: ".$volume->id;
       if (defined($volume)) {
-        if ($volume->type !~ /CLN/) {
+        if (!$volume->cleaningTape) {
 	  $slot .= " ".$volume->pool->name if ($opts{'p'});
           if ($volume->allocated) {
             $slot .= " ALLOCATED";
@@ -60,7 +60,10 @@ for my $robot (NBU::Robot->farm) {
               $slot .= " FULL";
               $fullCount{$volume->pool->name} += 1;
 	    }
-            $slot .= " FROZEN" if ($volume->frozen);
+	    if ($volume->frozen) {
+              $slot .= " FROZEN";
+              $frozenCount{$volume->pool->name} += 1;
+	    }
 	    if (!defined($oldest) || ($volume->allocated < $oldest->allocated)) {
 	      $oldest = $volume;
 	    }
@@ -76,7 +79,7 @@ for my $robot (NBU::Robot->farm) {
           }
           $poolCount{$volume->pool->name} += 1;
         }
-        elsif ($volume->type =~ /_CLN/) {
+        elsif ($volume->cleaningTape) {
           $cleanCount += 1;
           $cleanings += $volume->cleaningCount;
 	  if ($volume->cleaningCount == 0) {
@@ -105,11 +108,18 @@ for my $robot (NBU::Robot->farm) {
     my $empty = $emptyCount{$pool} += 0;
     my $full = $fullCount{$pool} += 0;
     my $partial = $total - $full - $empty;
+    my $frozen = $frozenCount{$pool} += 0;
 
     if ($poolSpecs) {
 
       print "${prefix}$total $pool\: $empty/$partial/$full\n";
 
+      if (defined(my $limit = $$poolSpecs{'frozen'})) {
+	if ($frozen > $limit) {
+	  my $count = $frozen - $limit;
+	  print "${prefix}     Remove $count frozen $pool volumes\n";
+	}
+      }
       if (defined(my $limit = $$poolSpecs{'full'})) {
 	if ($full > $limit) {
 	  my $count = $full - $limit;

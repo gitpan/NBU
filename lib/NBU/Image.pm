@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.10 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -114,6 +114,17 @@ sub expires {
   return $self->{EXPIRES};
 }
 
+sub size {
+  my $self = shift;
+  my $size;
+
+  for my $f ($self->fragments) {
+    next unless defined($f);
+    $size += $f->size;
+  }
+
+  return $size;
+}
 
 #
 # Add another fragment to this image
@@ -155,12 +166,12 @@ sub loadImages {
   my $image;
   while (<$pipe>) {
     if (/^IMAGE/) {
-      my ($tag, $clientName, $classType, $backupID, $className,
-	$u1,
+      my ($tag, $clientName, $clientVersion, $backupID, $className,
+	$classType,
 	$scheduleName,
 	$scheduleType,
 	$retentionLevel, $fileCount, $expires,
-	$u3, $u4
+	$compressed, $encrypted
       ) = split;
 
       $image = undef;
@@ -178,10 +189,15 @@ sub loadImages {
     elsif (/^FRAG/) {
       next if (!defined($image));
 
-      my ($tag, $copy, $number, $size, $u1, $u2, $u3, $fileNumber, $mediaID, $mmHost,
-	     $u4, $offset, $u5, $dwo, $u6, $u7, $expires, $u8) = split;
+      my ($tag, $copy, $number, $size, $removable,
+	  $mediaType, $density, $fileNumber,
+	  $mediaID, $mmHost,
+	  $blockSize, $offset, $allocated, $dwo,
+	  $u6, $u7,
+	  $expires, $mpx
+      ) = split;
       my $volume = NBU::Media->byID($mediaID);
-      my $fragment = NBU::Fragment->new($number, $image, $volume, $offset, $size, $dwo, $fileNumber);
+      my $fragment = NBU::Fragment->new($number, $image, $volume, $offset, $size, $dwo, $fileNumber, $blockSize);
       $volume->insertFragment($fileNumber - 1, $fragment);
       $image->insertFragment($fragment);
     }

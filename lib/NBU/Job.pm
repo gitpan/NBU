@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.17 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.19 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -63,157 +63,207 @@ sub list {
   return @jobList;
 }
 
-my @jobStates = ("queued", "active", "re-queued", "done");
 my @jobTypes = ("immediate", "scheduled", "user");
 my $asOf;
-my $fromFile = "alljobs.allcolumns";
+my $fromFile = $ENV{"HOME"}."/.alljobs.allcolumns";
+my ($jobPipe, $refreshPipe);
 sub loadJobs {
   my $Class = shift;
   my $readFromFile = shift;
-  my $pipe;
+  my $logFile = shift;
 
   if (defined($readFromFile)) {
-    open(PIPE, "<$fromFile");  $pipe = *PIPE{IO};
+    die "Cannot open previous job log file \"$fromFile\"\n" unless open(PIPE, "<$fromFile");
+    $jobPipe = *PIPE{IO};
     my @stat = stat(PIPE);  $asOf = $stat[9];
   }
   else {
     $asOf = time;
-    $pipe = NBU->cmd("bpdbjobs -report -all_columns | tee $fromFile |");
+    my $tee = defined($logFile) ? "| tee $fromFile" : "";
+    ($jobPipe, $refreshPipe) = NBU->cmd("| bpdbjobs -report -all_columns -stay_alive $tee |");
   }
-  while (<$pipe>) {
-    chop;
 
-    #
-    # Occasionally some well-meaning but severely misguided soul decides that the occasional comma
-    # inserted in the midst of an error message is a bad thing indeed (which it is) so it was
-    # decided to quote that comma with a back-slash.  It is for occasions such as this that the
-    # expression "From the frying pan into the fire" was invented.  'nuff said.
-    s/([^\\])\\,/${1}-/;
-
-    my (
-      $jobID, $jobType, $state, $status, $className, $scheduleName, $client,
-      $server, $started, $elapsed, $ended, $stUnit, $currentTry, $operation,
-      $KBytesWritten, $filesWritten, $currentFile, $percent,
-      # This is the PID of the bpsched process on the master
-      $jobPID,
-      $owner,
-      $subType, $classType, $scheduleType, $priority,
-      $group, $masterServer, $retentionUnits, $retentionPeriod,
-      $compression,
-      # The next two values are used to compute % complete information, i.e.
-      # they represent historical data
-      $KBytesLastWritten, $filesLastWritten,
-      $pathListCount,
-      @rest) = split(/,/);
-
-    my $job;
-    if (!($job = NBU::Job->byID($jobID))) {
-      $job = NBU::Job->new($jobPID);
-      $job->id($jobID);
-      $job->start($started);
-
-      $job->type($jobTypes[$jobType]);
-
-      $job->storageUnit(NBU::StorageUnit->byLabel($stUnit));
-      my $backupID = $client."_".$started;
-      my $image = $job->image($backupID);
-      $image->client(NBU::Host->new($client));
-      my $class = $image->class(NBU::Class->new($className));
-      $image->schedule(NBU::Schedule->new($scheduleName, $class));
-    }
-    $job->state($jobStates[$state]);
-    $job->try($currentTry);
-
-    #
-    # Extract the list of paths (either in the class definition's include list or the ones
-    # provided by the user.
-    my @paths;
-    if (defined($pathListCount)) {
-      for my $i (1..$pathListCount) {
-	my $p = shift @rest;
-	push @paths, $p;
-      }
-    }
-
-    #
-    # March through the list of tries and for each of them, extract the progress
-    # scenario.  Need to think about a way to do delta's: remember last try and
-    # progress indices perhaps?
-    if (defined(my $tryCount = shift @rest)) {
-      for my $i (1..$tryCount) {
-	my ($tryPID, $tryStUnit, $tryServer,
-	    $tryStarted, $tryElapsed, $tryEnded,
-	    $tryStatus, $description, $tryProgressCount, @tryRest) = @rest;
-
-	$elapsed = $tryElapsed;
-	for my $t (1..$tryProgressCount) {
-	  my $tryProgress = shift @tryRest;
-	  my ($dt, $tm, $dash, $msg) = split(/[\s]+/, $tryProgress, 4);
-
-	  if ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{4})/) {
-	  }
-	  elsif ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{2})/) {
-	    $3 += 2000;
-	  }
-	  my $mm = $1;  my $dd = $2;  my $yyyy = $3;
-
-	  $tm =~ /([\d]{2}):([\d]{2}):([\d]{2})/;
-	  my $h = $1;  my $m = $2;  my $s = $3;
-	  my $now = timelocal($s, $m, $h, $dd, $mm-1, $yyyy);
-
-	  if ($msg =~ /connecting/) {
-	    $job->startConnecting($now);
-	  }
-	  elsif ($msg =~ /connected/) {
-	    $job->connected($now);
-	  }
-	  elsif ($msg =~ /^mounting ([\S]+)/) {
-	    my $volume = NBU::Media->byID($1);
-	    $job->startMounting($volume, $now);
-	  }
-	  elsif ($msg =~ /mounted/) {
-	    # unfortunately this data stream does not tell us which drive :-(
-	    $job->mounted(undef, $now);
-	  }
-	  elsif ($msg =~ /positioning/) {
-	    my $fileNumber;
-	    $job->startPositioning($fileNumber, $now);
-	  }
-	  elsif ($msg =~ /positioned/) {
-	    $job->positioned($now);
-	  }
-	  elsif ($msg =~ /begin writing/) {
-	    $job->startWriting($now);
-	  }
-	  elsif ($msg =~ /end writing/) {
-	    $job->doneWriting($now);
-	  }
-	  else {
-print "$jobID\:$i\: $msg\n";
-	  }
-	}
-	my $tryKBytesWritten = $KBytesWritten = shift @tryRest;
-	my $tryFilesWritten = $filesWritten = shift @tryRest;
-
-	@rest = @tryRest;
-      }
-    }
-
-    if ($job->state eq "active") {
-      $job->{CURRENTFILE} = $currentFile;
-      $job->{SIZE} = $KBytesWritten;
-      $job->{FILECOUNT} = $filesWritten;
-      $job->{OPERATION} = $operation;
-      $job->{ELAPSED} = $elapsed;
-    }
-    elsif ($job->state eq "done") {
-      $job->{SIZE} = $KBytesWritten;
-      $job->{FILECOUNT} = $filesWritten;
-      $job->stop($ended, $status);
-      $job->{ELAPSED} = $elapsed;
-    }
+  if (!(<$jobPipe> =~ /^C([\d]+)$/)) {
+    return undef;
   }
+  my $jobRowCount = $1;
+
+  while ($jobRowCount--) {
+    my $jobDescription;
+    if (!($jobDescription = <$jobPipe>)) {
+      print STDERR "Failed to read from job pipe ($jobPipe)\n";
+      last;
+    }
+    parseJob($jobDescription);
+  }
+
   return $asOf;
+}
+
+sub refreshJobs {
+  my $Class = shift;
+
+  return undef if (!defined($jobPipe));
+
+  print $refreshPipe "refresh\n" if (defined($refreshPipe));
+
+  if (!(<$jobPipe> =~ /^C([\d]+)$/)) {
+    return undef;
+  }
+  my $jobRowCount = $1;
+
+  while ($jobRowCount--) {
+    my $jobDescription;
+    if (!($jobDescription = <$jobPipe>)) {
+      print STDERR "Failed to read from job pipe ($jobPipe)\n";
+      last;
+    }
+    parseJob($jobDescription);
+  }
+
+  return $asOf;
+}
+
+
+
+sub parseJob {
+  my $jobDescription = shift;
+  chop $jobDescription;
+
+  #
+  # Occasionally some well-meaning but severely misguided soul decides that
+  # the occasional comma inserted in the midst of an error message is a bad
+  # thing indeed (which it is) so it was decided to quote that comma with a
+  # back-slash.  It is for occasions such as this that the expression "From
+  # the frying pan into the fire" was invented.  'nuff said.
+  $jobDescription =~ s/([^\\])\\,/${1}-/;
+
+  my (
+    $jobID, $jobType, $state, $status, $className, $scheduleName, $client,
+    $server, $started, $elapsed, $ended, $stUnit, $currentTry, $operation,
+    $KBytesWritten, $filesWritten, $currentFile, $percent,
+    # This is the PID of the bpsched process on the master
+    $jobPID,
+    $owner,
+    $subType, $classType, $scheduleType, $priority,
+    $group, $masterServer, $retentionUnits, $retentionPeriod,
+    $compression,
+    # The next two values are used to compute % complete information, i.e.
+    # they represent historical data
+    $KBytesLastWritten, $filesLastWritten,
+    $pathListCount,
+    @rest) = split(/,/, $jobDescription);
+
+  my $job;
+  if (!($job = NBU::Job->byID($jobID))) {
+    $job = NBU::Job->new($jobPID);
+    $job->id($jobID);
+
+
+    $job->start($started);
+
+    $job->type($jobTypes[$jobType]);
+
+    $job->storageUnit(NBU::StorageUnit->byLabel($stUnit));
+    my $backupID = $client."_".$started;
+    my $image = $job->image($backupID);
+    my $class = $image->class(NBU::Class->new($className));
+    $image->schedule(NBU::Schedule->new($scheduleName, $class));
+    $image->client(NBU::Host->new($client));
+  }
+  $job->state($state);
+  $job->try($currentTry);
+
+  #
+  # Extract the list of paths (either in the class definition's include list
+  # or the ones provided by the user.
+  my @paths;
+  if (defined($pathListCount)) {
+    for my $i (1..$pathListCount) {
+      my $p = shift @rest;
+      push @paths, $p;
+    }
+  }
+
+  #
+  # March through the list of tries and for each of them, extract the progress
+  # scenario.  Need to think about a way to do delta's: remember last try and
+  # progress indices perhaps?
+  if (defined(my $tryCount = shift @rest)) {
+    for my $i (1..$tryCount) {
+      my ($tryPID, $tryStUnit, $tryServer,
+	  $tryStarted, $tryElapsed, $tryEnded,
+	  $tryStatus, $description, $tryProgressCount, @tryRest) = @rest;
+
+      $elapsed = $tryElapsed;
+      for my $t (1..$tryProgressCount) {
+	my $tryProgress = shift @tryRest;
+	my ($dt, $tm, $dash, $msg) = split(/[\s]+/, $tryProgress, 4);
+
+	if ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{4})/) {
+	}
+	elsif ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{2})/) {
+	  $3 += 2000;
+	}
+	my $mm = $1;  my $dd = $2;  my $yyyy = $3;
+
+	$tm =~ /([\d]{2}):([\d]{2}):([\d]{2})/;
+	my $h = $1;  my $m = $2;  my $s = $3;
+	my $now = timelocal($s, $m, $h, $dd, $mm-1, $yyyy);
+
+	if ($msg =~ /connecting/) {
+	  $job->startConnecting($now);
+	}
+	elsif ($msg =~ /connected/) {
+	  $job->connected($now);
+	}
+	elsif ($msg =~ /^mounting ([\S]+)/) {
+	  my $volume = NBU::Media->byID($1);
+	  $job->startMounting($volume, $now);
+	}
+	elsif ($msg =~ /mounted/) {
+	  # unfortunately this data stream does not tell us which drive :-(
+	  $job->mounted(undef, $now);
+	}
+	elsif ($msg =~ /positioning/) {
+	  my $fileNumber;
+	  $job->startPositioning($fileNumber, $now);
+	}
+	elsif ($msg =~ /positioned/) {
+	  $job->positioned($now);
+	}
+	elsif ($msg =~ /begin writing/) {
+	  $job->startWriting($now);
+	}
+	elsif ($msg =~ /end writing/) {
+	  $job->doneWriting($now);
+	}
+	else {
+print "$jobID\:$i\: $msg\n";
+	}
+      }
+      my $tryKBytesWritten = $KBytesWritten = shift @tryRest;
+      my $tryFilesWritten = $filesWritten = shift @tryRest;
+
+      @rest = @tryRest;
+    }
+  }
+
+  if ($job->state eq "active") {
+    $job->{CURRENTFILE} = $currentFile;
+    $job->{SIZE} = $KBytesWritten;
+    $job->{FILECOUNT} = $filesWritten;
+    $job->{OPERATION} = $operation;
+    $job->{ELAPSED} = $elapsed;
+  }
+  elsif ($job->state eq "done") {
+    $job->{SIZE} = $KBytesWritten;
+    $job->{FILECOUNT} = $filesWritten;
+    $job->stop($ended, $status);
+    $job->{ELAPSED} = $elapsed;
+  }
+  
+  return $job;
 }
 
 sub byID {
@@ -513,14 +563,32 @@ sub type {
   return $self->{TYPE};
 }
 
+my @jobStates = ("queued", "active", "re-queued", "done");
 sub state {
   my $self = shift;
 
   if (@_) {
     $self->{STATE} = shift;
   }
+  return $jobStates[$self->{STATE}];
+}
 
-  return $self->{STATE};
+sub active {
+  my $self = shift;
+
+  return ($self->{STATE} == 1);
+}
+
+sub done {
+  my $self = shift;
+
+  return ($self->{STATE} == 3);
+}
+
+sub queued {
+  my $self = shift;
+
+  return (($self->{STATE} == 0) || ($self->{STATE} == 2));
 }
 
 sub busy {

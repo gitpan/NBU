@@ -1,0 +1,8 @@
+For release 0.73:
+Most changes are bug fix and example script related.  It is interesting to see
+how easy it has been to whip up scripts on top of the object model.  However,
+sometimes a flaw in the underlying model is exposed :-(  Major changes are:
+- addition of nbutop.pl
+  Patterned after the famous top utility, this script lists the currently active
+  jobs in a number of sort orders.  Leveraging the object model correlating
+  active jobs to volumes and drives was a no-brainer!

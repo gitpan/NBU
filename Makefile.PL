@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.72',
+            'VERSION'         => '0.73',
             
             dist              => {
               DIST_DEFAULT => 'all tardist',

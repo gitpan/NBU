@@ -6,7 +6,7 @@ use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('saAdr', \%opts);
+getopts('ltsaAdr', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -38,7 +38,9 @@ my %stateCodes = (
   're-queued' => 'R',
 );
 
-my $asOf = NBU::Job->loadJobs($opts{'r'});
+my $totalWritten = 0;
+
+my $asOf = NBU::Job->loadJobs($opts{'r'}, $opts{'l'});
 my $mm;  my $dd;  my $yyyy;
   my ($s, $m, $h, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($asOf);
   $year += 1900;
@@ -50,7 +52,7 @@ my $since = timelocal(0, 0, 0, $dd, $mm-1, $yyyy);
 my @jl = NBU::Job->list;
 for my $job (sort sortOrder (@jl)) {
   if (!$opts{'a'}) {
-    next unless ($job->state eq "active");
+    next unless ($job->active);
   }
   else {
     next if (!$opts{'A'} && ($job->start < $since));
@@ -86,6 +88,9 @@ for my $job (sort sortOrder (@jl)) {
 
     if ($state eq "D") {
       printf(" %3d ", $job->status);
+      if ($job->status == 0) {
+	$totalWritten += ($job->dataWritten / 1024);
+      }
       print dispInterval($job->elapsedTime);
     }
     elsif ($state eq "A") {
@@ -103,4 +108,8 @@ for my $job (sort sortOrder (@jl)) {
     }
     print "\n";
   }
+}
+
+if ($opts{'t'}) {
+  printf("Total volume written: %.2f\n", $totalWritten);
 }

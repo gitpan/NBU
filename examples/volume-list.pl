@@ -25,5 +25,6 @@ print STDERR "Trouble: ".$m->id." does not equal ".$m->barcode."\n" if ($m->id n
         ": ".(defined($m->pool) ? $m->pool->name : "NONE").
         ": ".(defined($m->group) ? $m->group : "NONE").
         ($m->allocated ? ": Allocated" : "").
+        ($m->frozen ? ": Frozen" : "").
         "\n";
 }

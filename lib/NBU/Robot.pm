@@ -13,7 +13,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw(%robotLevel);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.13 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%robotLevel);
   @EXPORT_OK =   qw();
@@ -36,7 +36,7 @@ my %robotTypes = (
   12 => 'TLH',
   13 => 'TLM',
   17 => 'LMF',
-  0 => 'NONE',
+  0 => '-',
 );
 
 sub new {
@@ -58,6 +58,7 @@ sub new {
       $robot->{TYPE} = $robotTypes{$type};
     }
     else {
+      return undef if ($type eq "-");
       $robot->{TYPE} = $type;
     }
 

@@ -10,6 +10,8 @@ package NBU;
 
 require 5.005;
 
+use IPC::Open2;
+
 use strict;
 use Carp;
 
@@ -30,7 +32,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.16 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -117,6 +119,8 @@ my %cmdList = (
   bpstulist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpstulist",
   bpretlevel => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpretlevel",
 
+  bperrcode => $sudo."${NBdir}${PS}bin${PS}goodies${PS}bperrcode",
+
   vmoprcmd => $sudo."${MMdir}${PS}bin${PS}vmoprcmd",
   vmquery => $sudo."${MMdir}${PS}bin${PS}vmquery",
   vmchange => $sudo."${MMdir}${PS}bin${PS}vmchange",
@@ -129,27 +133,47 @@ my $pipeNames = "PIPE00";
 sub cmd {
   my $Class = shift;
   my $cmdline = shift;
-  my $argoffset = index($cmdline, " ");
-  $argoffset = ($argoffset < 0) ? length($cmdline) : $argoffset + 1;
-  
-  my $cmd = substr($cmdline, 0, $argoffset-1);
-  my $arglist = substr($cmdline, $argoffset);
+  my $biDirectional;
+
+  my $originalCmdline = $cmdline;
+  #
+  # Providing one's own trailing pipe is deprecated
+  $cmdline =~ s/[\s]*\|[\s]*$//;
+
+  if ($cmdline =~ s/^[\s]*\|[\s]*//) {
+    $biDirectional = 1;
+  }
+
+  my $cmd = $cmdline;
+  my $arglist = "";
+  if ((my $argoffset = index($cmdline, " ")) >= 0) {
+    $cmd = substr($cmdline, 0, $argoffset);
+    $arglist = substr($cmdline, $argoffset+1);
+  }
 
   if (!exists($cmdList{$cmd})) {
-    print STDERR "Not aware of such a NetBackup command as \"$cmd\"\n";
+    print STDERR "Not aware of such a NetBackup command as \"$cmd\" extracted from\n\t$originalCmdline";
     return undef;
   }
 
   $cmdline = $cmdList{$cmd}." ".$arglist;
   if ($debug) {
-    print STDERR "Executing: $cmdline\n";
+    print STDERR "Executing: ".(defined($biDirectional) ? "bi-directional " : "")."$cmdline\n";
   }
 
-  $pipeNames++;
-  no strict 'refs';
-  open($pipeNames, $cmdline);
-  return *$pipeNames{IO};
-  use strict 'refs';
+  if (defined($biDirectional)) {
+    my $readPipe = $pipeNames++;
+    my $writePipe = $pipeNames++;
+    no strict 'refs';
+    open2($readPipe, $writePipe, $cmdline);
+    return (*$readPipe{IO}, *$writePipe{IO});
+  }
+  else {
+    my $pipe = $pipeNames++;
+    no strict 'refs';
+    open($pipe, $cmdline." |");
+    return *$pipe{IO};
+  }
 }
 
 my ($me, $master, @servers);
@@ -238,6 +262,30 @@ sub servers {
 
   loadClusterInformation() if (!defined($me));
   return @servers;
+}
+
+my $msgsLoaded;
+my %msgs;
+sub loadErrorMessages {
+  my $Class = shift;
+
+  $msgsLoaded = 0;
+  my $pipe = NBU->cmd("bperrcode  |");
+  while (<$pipe>) {
+    chop;
+    my ($code, $msg) = split(/ /, $_, 2);
+    $msgs{$code} = $msg;
+    $msgsLoaded += 1;
+  }
+  close($pipe);
+}
+
+sub errorMessage {
+  my $Class = shift;
+
+  NBU->loadErrorMessages if (!defined($msgsLoaded));
+
+  return $msgs{shift};
 }
 
 1;

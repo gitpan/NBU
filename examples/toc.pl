@@ -10,8 +10,12 @@ getopts('dR', \%opts);
 NBU->debug($opts{'d'});
 
 my $m = NBU::Media->new($ARGV[0]);
-my $n = 1;
+my $n = 0;
 foreach my $fragment ($m->tableOfContents) {
+
+  $n++;
+
+  next if (!defined($fragment));
 #  print $fragment->offset."/".$fragment->size.": ";
   printf("%3u:", $n);
 
@@ -23,6 +27,4 @@ foreach my $fragment ($m->tableOfContents) {
       print "      $f\n";
     }
   }
-
-  $n++;
 }

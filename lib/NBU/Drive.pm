@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.12 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.13 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -69,7 +69,7 @@ sub populate {
     my $pipe = NBU->cmd("vmoprcmd -h ".$server->name." -xdraw ds |");
     while (<$pipe>) {
       next unless (/^DRIVESTATUS/);
-      my ($ignore, $id, $density, $control, $user, $rvsn, $evsn, $request,
+      my ($marker, $id, $density, $control, $user, $rvsn, $evsn, $request,
 	  $robotType, $robotNumber, $state, $name, $assigned, $ignore2, $lastCleaned, $comment
 	) = split(/\s+/, $_, 16);
       chop $comment;

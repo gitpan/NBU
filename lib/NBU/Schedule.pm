@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.5 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.6 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -44,6 +44,14 @@ sub class {
 
   return $self->{CLASS};
 }
+
+my %scheduleTypes = (
+  0 => "Full",
+  1 => "Differential Incremental",
+  2 => "User Backup",
+  3 => "User Archive",
+  4 => "Cumulative Incremental",
+);
 
 1;
 

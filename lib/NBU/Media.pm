@@ -14,8 +14,8 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  use vars       qw(%densities);
-  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  use vars       qw(%densities %mediaTypes);
+  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -34,6 +34,58 @@ BEGIN {
   15 => "dlt2",
   14 => "hcart2",
   20 => "hcart3",
+  21 => "dlt3",
+);
+
+my %mediaCodes = (
+  'DLT' => 11,
+  'DLT_CLN'=> 12,
+  'DLT2    ' => 16,
+  'DLT2_CLN' => 17,
+  'DLT3    ' => 26,
+  'DLT3_CLN' => 27,
+  'HCART' => 6,
+  'HC_CLN  ' => 13,
+  'HCART2  ' => 14,
+  'HC2_CLN ' => 15,
+  'HCART3  ' => 24,
+  'HC3_CLN ' => 25,
+  '4MM' => 9,
+  '4MM_CLN' => 10,
+  '8MM' => 4,
+  '8MM_CLN' => 5,
+#  '8MM2    ' => 
+#  '8MM2_CLN' => 
+#  'D2      ' => 
+#  'D2_CLN  ' => 
+  'DTF     ' => 22,
+  'DTF_CLN ' => 23,
+  'DEFAULT' => 0,
+);
+
+%mediaTypes = (
+  0  => "DEFAULT",
+  11 => "DLT cartridge tape",
+  12 => "DLT cleaning tape",
+  16 => "DLT cartridge tape 2",
+  17 => "DLT cleaning tape 2",
+  26 => "DLT cartridge tape 3",
+  27 => "DLT cleaning tape 3",
+  6  => "1/2\" cartridge tape",
+  13 => "1/2\" cleaning tape",
+  14 => "1/2\" cartridge tape 2",
+  15 => "1/2\" cleaning tape 2",
+  24 => "1/2\" cartridge tape 3",
+  25 => "1/2\" cleaning tape 3",
+  4  => "8MM cartridge tape",
+  5  => "8MM cleaning tape",
+  9  => "4MM cartridge tape",
+  10 => "4MM cleaning tape",
+  22 => "DTF cartridge tape",
+  23 => "DTF cleaning tape",
+  1  => "Rewritable optical disk",
+  2  => "WORM optical disk",
+  8  => "QIC - 1/4\" cartridge tape",
 );
 
 my %mediaList;
@@ -72,7 +124,7 @@ sub populate {
         exit 0;
       }
       $volume = NBU::Media->new($1);
-      $volume->{LOADED} = 1;
+      $volume->{MMLOADED} = 1;
       $volume->mmdbHost($mmdbHost);
       next;
     }
@@ -131,8 +183,8 @@ sub populate {
 
   #
   # Have to force the pool information to load or we dead-lock.  It appears
-  # the VM database deamon is single threaded and won't answer a pool query until
-  # the volume listing is completed...
+  # the VM database deamon is single threaded and won't answer a pool query
+  # until the volume listing is completed...
   NBU::Pool->populate;
 
   $pipe = NBU->cmd("vmquery -a -w -h ".$master->name." |");
@@ -140,7 +192,7 @@ sub populate {
   while (<$pipe>) {
     my ($id,
         $opticalPartner,
-        $mediaType,
+        $mediaCode,
         $barcode, $barcodePartner,
         $robotHostName, $robotType, $robotNumber, $slotNumber,
         $side,
@@ -167,7 +219,11 @@ sub populate {
       $volume = NBU::Media->new($id);
     }
     $volume->barcode($barcode);
-    $volume->{MEDIATYPE} = $mediaType;
+
+    if (!exists($mediaCodes{$mediaCode})) {
+    }
+    $volume->{MEDIATYPE} = $mediaCodes{$mediaCode};
+
     $volume->{CLEANINGCOUNT} = $cleaningCount;
     $volume->{MOUNTCOUNT} = $mountCount;
     $volume->{MAXMOUNTS} = $maxMounts;
@@ -226,6 +282,12 @@ sub listVolumes {
   my $Class = shift;
 
   return (values %mediaList);
+}
+
+sub list {
+  my $Class = shift;
+
+  return ($Class->listVolumes);
 }
 
 sub mmdbHost {
@@ -318,10 +380,27 @@ sub errorCount {
   return $self->{ERRORCOUNT};
 }
 
+my %cleaningTypes = (
+  12 => 1,
+  17 => 1,
+  27 => 1,
+  13 => 1,
+  15 => 1,
+  25 => 1,
+  5 => 1,
+  9 => 1,
+  23 => 1,
+);
+sub cleaningTape {
+  my $self = shift;
+
+  return exists($cleaningTypes{$self->type});
+}
+
 sub cleaningCount {
   my $self = shift;
 
-  if (@_ && ($self->{MEDIATYPE} =~ /_CLN$/)) {
+  if (@_ && $self->cleaningTape) {
     my $newCount = shift;
     NBU->cmd("vmchange -m ".$self->id." -n $newCount\n");
     $self->{CLEANINGCOUNT} = $newCount;
@@ -332,7 +411,7 @@ sub cleaningCount {
 sub mountCount {
   my $self = shift;
 
-  if ($self->{MEDIATYPE} =~ /_CLN$/) {
+  if ($self->cleaningTape) {
     return $self->{CLEANINGCOUNT};
   }
   else {
@@ -545,14 +624,19 @@ sub lastRead {
   return $self->{LASTREAD};
 }
 
+#
+# This refers to the date on which the youngest image on the volume expires
+# and hence the earliest date on which the volume can be de-allocated
+# Note to be confused with date on which the media itself expires and henceforth
+# cano no longer be used for backups altogether.
 sub expires {
   my $self = shift;
 
   if (@_) {
-    $self->{EXPIRES} = shift;
+    $self->{LASTIMAGEEXPIRES} = shift;
   }
 
-  return $self->{EXPIRES};
+  return $self->{LASTIMAGEEXPIRES};
 }
 
 sub status {
@@ -596,7 +680,21 @@ sub freeze {
             " -freeze\n");
     $self->{STATUS} |= 0x1;
   }
-  return $self->{STATUS} & 0x1;
+  return $self;
+}
+
+sub unfreeze {
+  my $self = shift;
+
+  if ($self->allocated && ($self->{STATUS} & 0x1)) {
+    # issue unfreeze command:
+    NBU->cmd("bpmedia".
+            " -h ".$self->mmdbHost->name.
+            " -ev ".$self->id.
+            " -unfreeze\n");
+    $self->{STATUS} &= 0xfffffffe;
+  }
+  return $self;
 }
 
 sub suspended {
@@ -647,7 +745,9 @@ sub insertFragment {
 sub loadImages {
   my $self = shift;
 
-  if (!$self->{LOADED} || ($self->allocated && ($self->expires > time))) {
+  $self->{TOC} = [] if (!defined($self->{TOC}));
+
+  if (!$self->{MMLOADED} || ($self->allocated && ($self->expires > time))) {
     NBU::Image->loadImages(NBU->cmd("bpimmedia -l -mediaid ".$self->id." |"));
   }
   return $self->{TOC};

@@ -5,13 +5,25 @@ use strict;
 use Getopt::Std;
 
 my %opts;
-getopts('uc', \%opts);
+getopts('ucd', \%opts);
 
 use NBU;
-NBU::Class->populate(1);
-NBU::Host->populate(1);
+NBU->debug($opts{'d'});
 
-foreach my $client (sort {$a->name cmp $b->name} (NBU::Host->hostList)) {
+NBU::Class->populate(1);
+
+my @clients;
+if ($#ARGV > -1 ) {
+  for my $clientName (@ARGV) {
+    push @clients, NBU::Host->new($clientName);
+  }
+}
+else {
+  NBU::Host->populate(1);
+  @clients = (sort {$a->name cmp $b->name} (NBU::Host->list));
+}
+
+foreach my $client (@clients) {
   my $cn = $client->name;
 
   print "$cn:";
