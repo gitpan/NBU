@@ -1,0 +1,24 @@
+Installing this distribution of the NBU modules themselves involves the usual
+incantations:
+	tar zxf NBU-???.tar.Z
+	cd NBU-???
+	perl Makefile.PL
+	make
+	make test
+where ??? is the distribution of which you are now the proud owner.
+
+In many environments the underlying NetBackup tools are executable by root
+only.  The NBU module checks to see if it has execute access to the binaries
+and, if not, prefixes every binary invocation with a call to sudo which it
+expects to find in /usr/local/bin/sudo.
+
+If you are unable to, or prefer not to, install the modules right away, you can test them by making sure the directory where the distribution was unpacked is
+included in your Perl path.  Assuming you unpacked in your home directory you
+could use this:
+	export PERLLIB=$HOME/NBU-???/lib:$HOME/NBU-???/blib/lib
+otherwise simply go for it:
+	make install
+
+To date the author has not first hand tested the installation in a Windows
+environment so if you find yourself stuck there, please contact him at:
+	pwinkeler@pbnj-solutions.com
