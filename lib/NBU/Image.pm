@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.16 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.19 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -126,6 +126,39 @@ sub expires {
   return $self->{EXPIRES};
 }
 
+sub loadDetail {
+  my $self = shift;
+
+  my $pipe = NBU->cmd("bpimagelist -l -backupid ".$self->id." |");
+  while (<$pipe>) {
+    next if (/^HIST/);
+    next if (/^FRAG/);
+    if (/^IMAGE/) {
+      my ($tag, $clientName,
+	  $u3, $u4, $u5,
+	  $id, $className,
+	  $u8, $u9, $u10,
+	  $scheduleName,
+	  $u12, $u13, $u14,
+	  $elapsed,
+	  $u16, $u17, $u18,
+	  $kbWritten,
+      ) = split;
+      $self->{ELAPSED} = $elapsed;
+    }
+  }
+  $self->{DETAILED} = 1;
+  close($pipe);
+}
+
+sub elapsed {
+  my $self = shift;
+
+  $self->loadDetail if (!defined($self->{DETAILED}));
+
+  return $self->{ELAPSED};
+}
+
 sub retention {
   my $self = shift;
 
@@ -206,7 +239,7 @@ sub loadImages {
       $image->{EXPIRES} = $expires;
       $image->{RETENTION} = NBU::Retention->byLevel($retentionLevel);
 
-      my $class = $image->class(NBU::Class->new($className));
+      my $class = $image->class(NBU::Class->new($className, $classType));
       $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
 
       my $host;
@@ -245,7 +278,17 @@ sub loadFileList {
     " -d ${mm}/${dd}/${yy}"." |");
   while (<$pipe>) {
     next if (/^FILES/);
-    my ($i, $u1, $u2, $u3, $offset, $u4, $u5, $u6, $u7, $name, $u8, $user, $group, $size, $tm1, $tm2, $tm3) = split;
+    chop;
+    #
+    # Since file names can contain spaces and some bright soul decided to place the file
+    # name in the middle of this line, we need to pick it apart in three pieces:
+    #  before, filename, after
+    my ($i, $u1, $u2, $u3, $offset, $u4, $u5, $u6, $u7, $rest) = split(/[\s]+/, $_, 10);
+    if (!($rest =~ /^(.*)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)$/)) {
+      print STDERR "IMAGE filename match failed on $_\n";
+      exit;
+    }
+    my ($name, $u8, $user, $group, $size, $tm1, $tm2, $tm3) = ($1, $2, $3, $4, $5, $6. $7, $8);
     next if ($name =~ /(\/|\\)$/);
     push @fl, $name;
   }

@@ -6,7 +6,7 @@ use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('dtscv', \%opts);
+getopts('dtscvM:', \%opts);
 
 if ($opts{'v'}) {
   $opts{'c'} = $opts{'t'} = $opts{'s'} = 1;
@@ -16,9 +16,15 @@ if ($opts{'v'}) {
 use NBU;
 NBU->debug($opts{'d'});
 
-NBU::StorageUnit->populate;
+my $master;
+if ($opts{'M'}) {
+  $master = NBU::Host->new($opts{'M'});
+}
+else {
+  my @masters = NBU->masters;  $master = $masters[0];
+}
 
-foreach my $stu (NBU::StorageUnit->list) {
+foreach my $stu (NBU::StorageUnit->list($master)) {
   NBU::Drive->populate($stu->host);
 }
 

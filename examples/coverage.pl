@@ -10,7 +10,7 @@ getopts('ucd', \%opts);
 use NBU;
 NBU->debug($opts{'d'});
 
-NBU::Class->populate(1);
+NBU::Class->populate;
 
 my @clients;
 if ($#ARGV > -1 ) {
@@ -57,7 +57,7 @@ foreach my $client (@clients) {
 
   if ($opts{'c'} || !$opts{'u'}) {
     my $sep = "\n\tadditional active classes are: ";
-    foreach my $class ($client->classList) {
+    foreach my $class ($client->classes) {
       if ($class->active && !$class->providesCoverage) {
 	print $sep.$class->name;
 	$sep = " ";
@@ -67,7 +67,7 @@ foreach my $client (@clients) {
 
   if ($opts{'u'} || !$opts{'c'}) {
     my $sep = "\n\tadditional inactive classes are: ";
-    foreach my $class ($client->classList) {
+    foreach my $class ($client->classes) {
       if (!$class->active && !$class->providesCoverage) {
 	print $sep."(".$class->name.")";
 	$sep = " ";

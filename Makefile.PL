@@ -3,21 +3,22 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.74',
+            'VERSION'         => '0.75',
 
             'EXE_FILES'       => [
                'bin/nbutop.pl',
                'bin/history.pl',
                'bin/robot-snapshot.pl',
                'bin/drive-watch.pl',
+               'bin/js.pl',
             ],
             
             dist              => {
               DIST_DEFAULT => 'all tardist',
-              COMPRESS     => 'compress',
-              SUFFIX       => '.Z',
-#              COMPRESS     => 'gzip -vf',
-#              SUFFIX       => '.gz',
+#              COMPRESS     => 'compress',
+#              SUFFIX       => '.Z',
+              COMPRESS     => 'gzip -vf',
+              SUFFIX       => '.gz',
             },
             
             clean             => {
@@ -25,7 +26,7 @@ my %args = (
             },
             
             realclean         => {
-              FILES        => '*~',
+              FILES        => '*~ examples/*~ bin/*~ lib/*~ lib/NBU/*~',
             },
             
             );

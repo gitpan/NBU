@@ -27,12 +27,13 @@ use NBU::Schedule;
 use NBU::Robot;
 use NBU::StorageUnit;
 use NBU::Job;
+use NBU::License;
 
 BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.30 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -117,8 +118,11 @@ my %cmdList = (
   bpdbjobs => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpdbjobs",
   bpmedia => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpmedia",
   bpimmedia => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpimmedia",
+  bpimagelist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpimagelist",
   bpstulist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpstulist",
   bpretlevel => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpretlevel",
+  bperror => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bperror",
+  bpminlicense => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpminlicense",
 
   bperrcode => $sudo."${NBdir}${PS}bin${PS}goodies${PS}bperrcode",
 
@@ -127,14 +131,19 @@ my %cmdList = (
   vmchange => $sudo."${MMdir}${PS}bin${PS}vmchange",
   vmpool => $sudo."${MMdir}${PS}bin${PS}vmpool",
   vmcheckxxx => $sudo."${MMdir}${PS}bin${PS}vmcheckxxx",
+  vmupdate => $sudo."${MMdir}${PS}bin${PS}vmupdate",
   vmglob => $sudo."${MMdir}${PS}bin${PS}vmglob",
 );
+
+my $vmchangeDelay = 3;
+my $lastChange = 0;
 
 my $pipeNames = "PIPE00";
 sub cmd {
   my $proto = shift;
   my $cmdline = shift;
   my $biDirectional;
+  my $quash = " 2> /dev/null ";
 
   my $originalCmdline = $cmdline;
   #
@@ -162,22 +171,34 @@ sub cmd {
     print STDERR "Executing: ".(defined($biDirectional) ? "bi-directional " : "")."$cmdline\n";
   }
 
+  if ($cmd eq "vmchange") {
+    if ((my $gap = time - $lastChange) < $vmchangeDelay) {
+      print STDERR "Delay ($vmchangeDelay - $gap) for vmchange\n" if ($debug);
+      sleep($vmchangeDelay - $gap);
+    }
+    $lastChange = time;
+  }
+    
   if (defined($biDirectional)) {
     my $readPipe = $pipeNames++;
     my $writePipe = $pipeNames++;
     no strict 'refs';
-    open2($readPipe, $writePipe, $cmdline);
+    open2($readPipe, $writePipe, $cmdline.$quash);
     return (*$readPipe{IO}, *$writePipe{IO});
   }
-  else {
+  elsif (!@_) {
     my $pipe = $pipeNames++;
     no strict 'refs';
-    open($pipe, $cmdline." |");
+    open($pipe, $cmdline.$quash." |");
     return *$pipe{IO};
+  }
+  else {
+    system($cmdline."\n");
+    return undef;
   }
 }
 
-my ($me, $master, @servers);
+my ($me, $master, @servers, @knownMasters);
 my $adminAddress;
 sub loadClusterInformation {
 
@@ -199,9 +220,10 @@ sub loadClusterInformation {
   # environment.  First we use bpgetconfig to locate the master in this
   # environment.  Then we use the same program to get the master to re-
   # gurgitate the full list of servers.
-  $master = $me = NBU::Host->new($myName);
+  $master = $me = NBU::Host->new($myName);  $myName = $me->name;
   $master = $me->clientOf
     if ($me->clientOf);
+  push @knownMasters, $master;
   $NBUVersion = $me->NBUVersion;
 
   close($pipe);
@@ -212,6 +234,12 @@ sub loadClusterInformation {
       my $serverName = $1;
       my $server = NBU::Host->new($serverName);
       push @servers, $server;
+    }
+    if (/KNOWN_MASTER = ([\S]+)/) {
+      my $serverName = $1;
+      my $server = NBU::Host->new($serverName);
+      push @knownMasters, $server
+	unless ($server == $master);
     }
   }
   close($pipe);
@@ -238,7 +266,7 @@ sub masters {
   my $proto = shift;
 
   loadClusterInformation() if (!defined($me));
-  return ($master);
+  return (@knownMasters);
 }
 
 sub master {
@@ -290,7 +318,21 @@ sub errorMessage {
 
   NBU->loadErrorMessages if (!defined($msgsLoaded));
 
-  return $msgs{shift};
+  my $code = shift;
+  return $msgs{$code};
+}
+
+sub date {
+  my $proto = shift;
+  my $epochTime = shift;
+
+  my ($s, $m, $h, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($epochTime);
+  $year += 1900;
+  my $mm = $mon + 1;
+  my $dd = $mday;
+  my $yyyy = $year;
+
+  return "$mm/$dd/$yyyy $h:$m:$s";
 }
 
 1;

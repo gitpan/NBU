@@ -6,7 +6,6 @@
 # After that updating the display with information on the active jobs is trivial
 
 use strict;
-
 use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
@@ -19,7 +18,7 @@ use Curses;
 my $program = $0;  $program =~ s /^.*\/([^\/]+)$/$1/;
 
 my %opts;
-getopts('vldrs:p:', \%opts);
+getopts('vldrs:p:M:', \%opts);
 
 my $interval = 60;
 if (defined($opts{'s'})) {
@@ -31,6 +30,14 @@ my $refreshCounter = 0;
 
 use NBU;
 NBU->debug($opts{'d'});
+
+my $master;
+if ($opts{'M'}) {
+  $master = NBU::Host->new($opts{'M'});
+}
+else {
+  my @masters = NBU->masters;  $master = $masters[0];
+}
 
 sub dispInterval {
   my $i = shift;
@@ -194,7 +201,7 @@ sub menu {
 #
 # Gather first round of drive data if we're running live
 if (!$opts{'r'}) {
-  foreach my $server (NBU->servers) {
+  foreach my $server (NBU::StorageUnit->mediaServers($master)) {
     NBU::Drive->populate($server);
   }
 }
@@ -202,7 +209,7 @@ if (!$opts{'r'}) {
 #
 # Load the first round of Job data
 print STDERR "Loading...";
-NBU::Job->loadJobs($opts{'r'}, $opts{'l'});
+NBU::Job->loadJobs($master, $opts{'r'}, $opts{'l'});
 
 my $win = new Curses;
 noecho();  cbreak();
@@ -231,7 +238,12 @@ $hdr .= " ".sprintf("%3s", "OP ");
 $hdr .= " ".sprintf("%6s", "VOLUME");
 $hdr .= " ".sprintf("%9s", "  SIZE   ");
 $hdr .= " ".sprintf("%4s", "SPD ");
-$hdr .= " ".sprintf("%4s", $opts{'r'} ? "STU" : "DRIVE");
+if ($opts{'r'}) {
+  $hdr .= " ".sprintf("%8s", "  STU");
+}
+else {
+  $hdr .= " ".sprintf("%11s", "   DRIVE");
+}
 
 while (!$passLimit || ($refreshCounter <= $passLimit)) {
   my $jobCount = 0;
@@ -272,14 +284,12 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
       $jobDescription .= " ".sprintf("%9.2f", ($job->dataWritten/1024));
       $jobDescription .= " ".sprintf("%.2f", $speed = ($job->dataWritten / $job->elapsedTime / 1024))
 	if ($job->elapsedTime);
+
+      $jobDescription .= " ".sprintf("%8s", defined($job->storageUnit) ? $job->storageUnit->label : "");
+
       if (!$opts{'r'}) {
 	if ($job->volume->drive) {
-	  $jobDescription .= " in ".$job->volume->drive->id;
-	}
-      }
-      else {
-	if (defined($job->storageUnit)) {
-	  $jobDescription .= " in ".$job->storageUnit->label;
+	  $jobDescription .= sprintf(":%2d", $job->volume->drive->index);
 	}
       }
     }
@@ -303,7 +313,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
   my $total = 0;
   if (!$opts{'r'}) {
     for my $d (NBU::Drive->pool) {
-      next unless (defined($d->robot));
+#      next unless (defined($d->robot));
       $total++;
       $down++ if ($d->down);
     }
@@ -339,11 +349,11 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 
   $win->addstr(2, 0, "Refreshing...");  $win->refresh();
   if (!$opts{'r'}) {
-    foreach my $server (NBU->servers) {
+    foreach my $server (NBU::StorageUnit->mediaServers($master)) {
       NBU::Drive->updateStatus($server);
     }
   }
-  if (!defined(NBU::Job->refreshJobs)) {
+  if (!defined(NBU::Job->refreshJobs($master))) {
     last;
   }
 

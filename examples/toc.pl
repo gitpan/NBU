@@ -1,11 +1,11 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
 
 use Getopt::Std;
 
 use NBU;
 
 my %opts;
-getopts('dR', \%opts);
+getopts('ubdR', \%opts);
 
 NBU->debug($opts{'d'});
 
@@ -20,11 +20,15 @@ foreach my $fragment ($m->tableOfContents) {
   printf("%3u:", $n);
 
   my $image = $fragment->image;
-  print "Fragment ".$fragment->number." of ".$image->class->name." from ".$image->client->name.": ";
+  print "Fragment ".$fragment->number." of ".$image->class->name.
+	($opts{'b'} ? " (".$image->id.")" : "").
+	" written on ".$fragment->driveWrittenOn." from ".$image->client->name.": ";
   print "Created ".substr(localtime($image->ctime), 4)."; ";
   print "Expires ".substr(localtime($image->expires), 4)."\n";
   if ($opts{'R'}) {
-    for my $f (sort ($image->fileList)) {
+    my @list = $image->fileList;
+    @list = (sort @list) unless ($opts{'U'});
+    for my $f (@list) {
       print "      $f\n";
     }
   }

@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.4 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.5 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -24,11 +24,11 @@ my %poolIDs;
 my %poolNames;
 
 sub new {
-  my $Class = shift;
+  my $proto = shift;
   my $Pool = {
   };
 
-  bless $Pool, $Class;
+  bless $Pool, $proto;
 
   if (@_) {
     my $id = $Pool->{ID} = shift;
@@ -41,7 +41,7 @@ sub new {
 }
 
 sub populate {
-  my $Class = shift;
+  my $proto = shift;
 
   return $wet if (defined($wet));
 
@@ -55,7 +55,7 @@ sub populate {
     chop;
     if (/^=================/) {
       if ($number) {
-	$Class->new($number, $name);
+	$proto->new($number, $name);
       }
       $number = undef;
     }
@@ -73,18 +73,18 @@ sub populate {
 }
 
 sub byName {
-  my $Class = shift;
+  my $proto = shift;
   my $name = shift;
 
-  $Class->populate if (!$wet);
+  $proto->populate if (!$wet);
   return $poolNames{$name};
 }
 
 sub byID {
-  my $Class = shift;
+  my $proto = shift;
   my $id = shift;
 
-  $Class->populate if (!$wet);
+  $proto->populate if (!$wet);
   return $poolIDs{$id};
 }
 
@@ -101,10 +101,19 @@ sub id {
 }
 
 sub list {
-  my $Class = shift;
+  my $proto = shift;
 
-  $Class->populate if (!$wet);
+  $proto->populate if (!$wet);
   return (values %poolIDs);
+}
+
+sub scratch {
+  my $proto = shift;
+
+  for my $p ($proto->list) {
+    return $p if ($p->name =~ /scratch/i);
+  }
+  return undef;
 }
 
 1;

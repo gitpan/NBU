@@ -13,7 +13,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw(%robotLevel);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.15 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%robotLevel);
   @EXPORT_OK =   qw();
@@ -106,6 +106,7 @@ sub populate {
 	$lastSlot = $1;
       }
       elsif (/^Slot = [\s]*([\d]+), <EMPTY>/) {
+	$self->empty($1);
 	$lastSlot = $1;
       }
       else {
@@ -123,6 +124,7 @@ sub populate {
 	$lastSlot = $1;
       }
       elsif (/^[\s]*([\d]+)[\s]+No/) {
+	$self->empty($1);
 	$lastSlot = $1;
       }
       else {
@@ -186,8 +188,12 @@ sub insert {
   my $slotList = $self->{SLOTS};
   my ($position, $volume) = @_;
 
-  if (exists($$slotList{$position}) && ($$slotList{$position} != $volume)) {
-    print STDERR "Slot $position in ".$self->id." already filled; no room for ".$volume->id."\n";
+  if (exists($$slotList{$position})) {
+    if ($$slotList{$position} != $volume) {
+      print STDERR "Slot $position in ".$self->id." already filled; no room for ".$volume->id."\n";
+    }
+    else {
+    }
   }
   else {
     $$slotList{$position} = $volume;
@@ -195,13 +201,41 @@ sub insert {
   return $$slotList{$position};
 }
 
-sub slot {
+sub empty {
   my $self = shift;
   my $slotList = $self->{SLOTS};
   my $position = shift;
 
+  if (exists($$slotList{$position})) {
+    my $volume = $$slotList{$position};
+    delete $$slotList{$position};
+
+    $volume->robot(undef);
+    $volume->slot(undef);
+  }
+
+  return undef;
+}
+
+sub nextEmptySlot {
+  my $self = shift;
+  my $slotList = $self->{SLOTS};
+
+  for my $s (1..$self->capacity) {
+    return $s if (!exists($$slotList{$s}));
+  }
+  return undef;
+}
+
+sub slot {
+  my $self = shift;
+  my $slotList = $self->{SLOTS};
+  my $position = shift;
+  
+
   if (@_) {
-    return $self->insert($position, shift);
+    my $volume = shift;
+    return $self->insert($position, $volume);
   }
   return $$slotList{$position};
 }
@@ -243,16 +277,16 @@ sub farm {
   return (@farm);
 }
 
-sub importCAP {
-  my $self = shift;
-
-# vmupdate -rn <number> -rt <type> -interactive -empty_ie
-}
-
 sub updateInventory {
   my $self = shift;
+  my $importCAP = shift;
 
-# vmupdate -rn <number> -rt <type> -M $master -mt $density -use_barcode_rules -rh $jukebox_robot_host{$jukebox} -vh $master" ;
+  NBU->cmd("vmupdate "." -rt ".$self->type." -rn ".$self->id." -rh ".$self->host->name
+	." -use_barcode_rules"
+	.((defined($importCAP) && $importCAP) ? " -empty_ie" : "")
+	, 0);
+
+  $self->populate();
 }
 
 1;

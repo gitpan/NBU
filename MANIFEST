@@ -12,6 +12,7 @@ lib/NBU/Fragment.pm
 lib/NBU/Host.pm
 lib/NBU/Image.pm
 lib/NBU/Job.pm
+lib/NBU/License.pm
 lib/NBU/Media.pm
 lib/NBU/Mount.pm
 lib/NBU/Retention.pm
@@ -28,11 +29,13 @@ bin/drive-watch.pl
 examples/freeze.pl
 bin/history.pl
 examples/joblog.pl
-examples/js.pl
+bin/js.pl
 bin/nbutop.pl
 examples/pool-list.pl
+examples/refresh.pl
 bin/robot-snapshot.pl
 examples/robot-status.pl
+examples/scratch.pl
 examples/statistics.pl
 examples/stu.pl
 examples/toc.pl

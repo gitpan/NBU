@@ -177,6 +177,7 @@ foreach $j (@list) {
 
 if (!$j->id) {
     print STDERR "Process was not eliminated? ".$j->pid."\n";
+    next;
 }
 
   if ($opts{'e'}) {
@@ -283,6 +284,7 @@ if ($opts{'d'}) {
     foreach my $d (@dl) {
       my $header = "Drive ".$d->id."\n";
       my $usage = $d->usage;
+      @$usage = (sort {$$a{START} <=> $$b{START} } @$usage);
       foreach my $use (@$usage) {
 
         my $mount = $$use{'MOUNT'};
@@ -360,6 +362,7 @@ if ($opts{'u'}) {
   foreach my $d (@dl) {
     my $id = $d->id;
     my $usage = $d->usage;
+    @$usage = (sort {$$a{START} <=> $$b{START} } @$usage);
 
     my $step = $asOf;
     my $use = shift @$usage;

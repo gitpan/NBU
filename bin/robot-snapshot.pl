@@ -1,23 +1,31 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
 
 use strict;
 use Getopt::Std;
 
 use lib '/usr/local/lib/perl5';
 
+use XML::Simple;
 use NBU;
 
 my %opts;
-getopts('ohdisp', \%opts);
+getopts('ohdispf:', \%opts);
 
 NBU->debug($opts{'d'});
 
-my $targetLevel;
-if (eval "require '/usr/local/etc/robot.conf'") {
-  if ($targetLevel = (*NBU::Robot::robotLevel{HASH})) {
-#    print STDERR "Found target levels in config file!\n";
-  }
+my $file = "/usr/local/etc/robot.conf";
+if (defined($opts{'f'})) {
+  $file = $opts{'f'};
+  die "No such configuration file: $file\n" if (! -f $file);
 }
+
+my $xs1 = XML::Simple->new(forcearray => 1);
+my $config;
+if (-f $file) {
+  $config = eval { $xs1->XMLin($file, forcearray => 1) };
+  die "robot-snapshot.pl: Could not parse XML configuration file $file\n" unless (defined($config));
+}
+
 NBU::Media->populate(1);
 
 for my $robot (NBU::Robot->farm) {
@@ -37,6 +45,7 @@ for my $robot (NBU::Robot->farm) {
   }
 
   my $volumeCount = 0;
+  my $netbackupCount = 0;
   my $cleanCount = 0;  my $cleanings = 0;
   my %poolCount;
   my %emptyCount;  my %fullCount;
@@ -52,7 +61,13 @@ for my $robot (NBU::Robot->farm) {
       $volumeCount += 1;
       $slot = "$prefix$position\: ".$volume->id;
       if (defined($volume)) {
-        if (!$volume->cleaningTape) {
+	if ($volume->netbackup) {
+	  $netbackupCount += 1;
+	  $slot .= " ".$volume->pool->name if ($opts{'p'});
+	  $slot .= " *";
+          $poolCount{$volume->pool->name} += 1;
+	}
+        elsif (!$volume->cleaningTape) {
 	  $slot .= " ".$volume->pool->name if ($opts{'p'});
           if ($volume->allocated) {
             $slot .= " ALLOCATED";
@@ -73,6 +88,7 @@ for my $robot (NBU::Robot->farm) {
 	    else {
 	      $slot .= " expires ".substr(localtime($volume->expires), 4);
 	    }
+	    $slot .= " rl=".$volume->retention->level;
           }
           else {
             $emptyCount{$volume->pool->name} += 1;
@@ -99,8 +115,16 @@ for my $robot (NBU::Robot->farm) {
   my $emptyCount = 0;
   my $fullCount = 0;
 
-  my $levels = $targetLevel ? $$targetLevel{$r} : undef;
+  my $robotConfig = $config ? $$config{robot}->{$r} : undef;
 
+  if (my $constraint = $robotConfig->{netbackup}) {
+    my $target = $$constraint[0]->{total};
+    if ((my $n = ($target - $netbackupCount)) > 0) {
+      print "${prefix}  Add $n NetBackup volumes\n";
+    }
+  }
+
+  my $levels = $robotConfig->{pool};
   foreach my $pool (keys %poolCount) {
     my $poolSpecs = $levels ? $$levels{$pool} : undef;
 

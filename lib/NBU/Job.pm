@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.25 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.37 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -69,6 +69,7 @@ my $fromFile = $ENV{"HOME"}."/.alljobs.allcolumns";
 my ($jobPipe, $refreshPipe);
 sub loadJobs {
   my $Class = shift;
+  my $master = shift;
   my $readFromFile = shift;
   my $logFile = shift;
 
@@ -80,7 +81,7 @@ sub loadJobs {
   else {
     $asOf = time;
     my $tee = defined($logFile) ? "| tee $fromFile" : "";
-    ($jobPipe, $refreshPipe) = NBU->cmd("| bpdbjobs -report -all_columns -stay_alive $tee |");
+    ($jobPipe, $refreshPipe) = NBU->cmd("| bpdbjobs -report -all_columns -stay_alive -M ".$master->name." $tee |");
   }
 
   if (!(<$jobPipe> =~ /^C([\d]+)$/)) {
@@ -94,7 +95,7 @@ sub loadJobs {
       print STDERR "Failed to read from job pipe ($jobPipe)\n";
       last;
     }
-    parseJob($jobDescription);
+    parseJob($master, $jobDescription);
   }
 
   return $asOf;
@@ -102,6 +103,7 @@ sub loadJobs {
 
 sub refreshJobs {
   my $Class = shift;
+  my $master = shift;
 
   return undef if (!defined($jobPipe));
 
@@ -118,7 +120,7 @@ sub refreshJobs {
       print STDERR "Failed to read from job pipe ($jobPipe)\n";
       last;
     }
-    parseJob($jobDescription);
+    parseJob($master, $jobDescription);
   }
 
   return $asOf;
@@ -127,6 +129,7 @@ sub refreshJobs {
 
 
 sub parseJob {
+  my $master = shift;
   my $jobDescription = shift;
   chop $jobDescription;
 
@@ -144,7 +147,8 @@ sub parseJob {
   # thing indeed (which it is) so it was decided to quote that comma with a
   # back-slash.  It is for occasions such as this that the expression "From
   # the frying pan into the fire" was invented.  'nuff said.
-  $jobDescription =~ s/([^\\])\\,/${1}-/;
+  if ($jobDescription =~ s/([^\\])\\,/${1} -/g) {
+  }
 
   my (
     $jobID, $jobType, $state, $status, $className, $scheduleName, $clientName,
@@ -167,19 +171,26 @@ sub parseJob {
     $job = NBU::Job->new($jobPID);
     $job->id($jobID);
 
-    $job->mediaServer(NBU::Host->new($serverName));
 
     $job->start($started);
 
     $job->type($jobTypes[$jobType]);
 
-    $job->storageUnit(NBU::StorageUnit->byLabel($stUnit));
+    $job->{STUNIT} = NBU::StorageUnit->byLabel($stUnit) if (defined($stUnit) && ($stUnit !~ /^[\s]*$/));
     my $backupID = $clientName."_".$started;
     my $image = $job->image($backupID);
-    my $class = $image->class(NBU::Class->new($className, $classType));
+    my $class = $image->class(NBU::Class->new($className, $classType, $master));
     $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
     $image->client(NBU::Host->new($clientName));
   }
+
+  #
+  # Record a job's media server at the earliest opportunity
+  if (!defined($job->mediaServer) && defined($serverName)) {
+    $job->mediaServer(NBU::Host->new($serverName));
+    $job->{STUNIT} = NBU::StorageUnit->byLabel($stUnit) if (defined($stUnit) && ($stUnit !~ /^[\s]*$/));
+  }
+
   $job->state($state);
   $job->try($currentTry);
 
@@ -210,12 +221,14 @@ sub parseJob {
 	my $tryProgress = shift @tryRest;
 	my ($dt, $tm, $dash, $msg) = split(/[\s]+/, $tryProgress, 4);
 
+	my $mm;  my $dd;  my $yyyy;
 	if ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{4})/) {
+	  $yyyy = $3;
 	}
 	elsif ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{2})/) {
-	  $3 += 2000;
+	  $yyyy = $3 + 2000;
 	}
-	my $mm = $1;  my $dd = $2;  my $yyyy = $3;
+	$mm = $1;  $dd = $2;
 
 	$tm =~ /([\d]{2}):([\d]{2}):([\d]{2})/;
 	my $h = $1;  my $m = $2;  my $s = $3;
@@ -434,6 +447,33 @@ sub status {
   return $self->{STATUSCODE};
 }
 
+sub errors {
+  my $self = shift;
+  my @errorList;
+
+  my $window = "";
+  $window .= "-d ".NBU->date($self->start)
+	      ." -e ".NBU->date($self->stop + 60)
+	  if (NBU->me->NBUVersion ne "3.2.0");
+  unless (!defined($self->status) || !$self->status) {
+    my $pipe = NBU->cmd("bperror -jobid ".$self->id." $window -problems");
+    while (<$pipe>) {
+      chop;
+      my ($tm, $version, $type, $severity, $serverName, $jobID, $jobGroupID, $u, $clientName, $who, $msg) =
+	split(/[\s]+/, $_, 11);
+      $msg =~ s/from client ${clientName}: (WRN|ERR|INF) - //;
+      my %e = (
+	tod => $tm,
+	severity => $severity,
+	who => $who,
+	message => $msg,
+      );
+      push @errorList, \%e;
+    }
+  }
+  return (@errorList);
+}
+
 sub elapsedTime {
   my $self = shift;
 
@@ -616,7 +656,7 @@ sub busy {
   my $self = shift;
 
   if (!$self->{STARTOP}) {
-print STDERR "Job ".$self->id." has no start op?\n";
+#print STDERR "Job ".$self->id." has no start op?\n";
     return undef;
   }
   else  {
@@ -636,6 +676,8 @@ sub files {
 }
 
 my %opCodes = (
+  -1 => '---',
+  25 => 'WAI',
   26 => 'CON',
   27 => 'MNT',
   29 => 'POS',

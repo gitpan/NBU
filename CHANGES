@@ -1,3 +1,32 @@
+For release 0.75
+This release builds on its predecessors by fleshing out more and more functionality
+as user (my) needs warrant.  Lately these have been focussed on two areas in
+particular: volume tracking and job reporting.  Hence the NBU::Media class implements
+quite a few more attribute manipulation methods and the NBU::Job class has gotten
+quite adept at parsing through the bpdbjobs output.
+And this just in under the wire: a start on License analysis using a NBU::License class
+Here is a somehwat arbitrary summary of changes:
+- nbutop.pl figures out which drives it should monitor by scavenging through all
+  the storage unit definitions.
+- The NBU::Host class implements a crude hostname aliasing mechanism so servers
+  listed under multiple names (read: with multiple interfaces) can be identified
+  as being one and the same.  At some point the aliases list will be read from a
+  configuration file.  (If only XML support wasn't such a pain to install!)
+- js.pl and nbutop.pl can be made to talk to other master servers with by
+  setting a -M flag.
+- client and class list examples now list class membership and member clients
+  respectively.
+- Get and set offsite attributes on volumes.
+- Jobs can now regurgitate the errors associated with them.
+- If you're willing to install some XML related modules, the new
+  robot-snapshot.pl script's configuration files are now written in XML; more
+  of this is coming.
+- Volume ejecting and robot inventory updating are now wired live.  (Vaulting
+  here we come :-)
+- Minor code re-arranging has lowered the Perl version requirements to 5.004
+- js.pl with -e will list the errors associated with a job; especially helpful
+  for those pesky status 1 jobs against Windoze boxes.
+- Quash stderr messages from the various cli tools
 For release 0.74
 - Run bpconfig as part of gathering the full picture of the NetBackup
   environment.  This allows us to display information on e-mail notifications

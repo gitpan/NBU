@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.5 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -40,7 +40,7 @@ sub new {
 }
 
 sub populate {
-  my $Class = shift;
+  my $proto = shift;
 
   my @masters = NBU->masters;  my $master = $masters[0];
 
@@ -49,7 +49,7 @@ sub populate {
   while (<$pipe>) {
     chop;
     my ($level, $period, $description) = split(/[\s]+/, $_, 3);
-    $Class->new($level, $period, $description);
+    $proto->new($level, $period, $description);
     chop;
   }
   close($pipe);
@@ -57,10 +57,10 @@ sub populate {
 }
 
 sub byLevel {
-  my $Class = shift;
+  my $proto = shift;
   my $level = shift;
 
-  $Class->populate if (!$retained);
+  $proto->populate if (!$retained);
   return $retentionLevels{$level};
 }
 
@@ -83,9 +83,9 @@ sub description {
 }
 
 sub list {
-  my $Class = shift;
+  my $proto = shift;
 
-  $Class->populate if (!$retained);
+  $proto->populate if (!$retained);
   return (values %retentionLevels);
 }
 

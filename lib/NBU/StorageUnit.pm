@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.11 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.13 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -22,7 +22,7 @@ BEGIN {
 }
 
 my %stuList;
-my $populated;
+my %populated;
 
 my %types = (
   1 => "Disk",
@@ -53,32 +53,48 @@ sub new {
 
 sub populate {
   my $proto = shift;
+  my $targetMaster = shift;
 
-  $populated = 0;
-  my $pipe = NBU->cmd("bpstulist |");
+  if (!defined($targetMaster)) {
+    my @masters = NBU->masters;  $targetMaster = $masters[0];
+  }
+
+  $populated{$targetMaster->name} = 0;
+  my $pipe = NBU->cmd("bpstulist -M ".$targetMaster->name." |");
   while (<$pipe>) {
     my ($label, $type, $hostName,
 	$robotType, $robotNumber, $density,
 	$numberOfDrives,
-	$initialMPX,
+	$maxFragmentSize,
 	$path,
-	$maxFragmentSize, $onDemandOnly, $maxMPXperDrive,
+	$onDemand,
+	$maxMPXperDrive,
 	$ndmpAttachHostName,
     ) = split;
 
     my $stu;
-    if (!defined($stu = NBU::StorageUnit->byLabel($label))) {
-      $stu = NBU::StorageUnit->new($label, $type);
-    }
+    $stu = NBU::StorageUnit->new($label);
 
+    $stu->{TYPE} = $type;
+
+    $stu->{MASTER} = $targetMaster;
     $stu->{HOST} = NBU::Host->new($hostName);
-
     $stu->{ROBOT} = NBU::Robot->new($robotNumber, $robotType, undef);
 
-    $stu->{DRIVECOUNT} = $numberOfDrives;
-    $stu->{DENSITY} = $NBU::Media::densities{$density};
+    if ($type == 1) {
+      $stu->{CONCURRENTJOBS} = $numberOfDrives;
+      $stu->{PATH} = $path;
+    }
+    elsif ($type == 2) {
+      $stu->{DRIVECOUNT} = $numberOfDrives;
+      $stu->{DENSITY} = $NBU::Media::densities{$density};
+    }
 
-    $populated += 1;
+    $stu->{ONDEMAND} = $onDemand;
+    $stu->{MAXMPX} = $maxMPXperDrive;
+    $stu->{MAXFRAGSIZE} = $maxFragmentSize;
+
+    $populated{$targetMaster->name} += 0;
   }
   close($pipe);
 
@@ -86,26 +102,75 @@ sub populate {
 
 sub list {
   my $proto = shift;
+  my $targetMaster = shift;
 
-  return (values %stuList);
+  if (!defined($targetMaster)) {
+    for my $master (NBU->masters) {
+      $proto->populate($master) if (!exists($populated{$master->name}));
+    }
+    return (values %stuList);
+  }
+  else {
+    $proto->populate($targetMaster) if (!exists($populated{$targetMaster->name}));
+    my @list;
+    for my $su (values %stuList) {
+      push @list, $su if (defined($su->master) && ($su->master == $targetMaster));
+    }
+    return (@list);
+  }
 }
 
 sub byLabel {
   my $proto = shift;
   my $label = shift;
+  my $targetMaster = shift;
 
-  $proto->populate if (!defined($populated));
+  return $stuList{$label} if (exists($stuList{$label}));
+
+  if (!defined($targetMaster)) {
+    for my $master (NBU->masters) {
+      $proto->populate($master) if (!exists($populated{$master->name}));
+    }
+  }
+  else {
+    $proto->populate($targetMaster) if (!exists($populated{$targetMaster->name}));
+  }
 
   if (!exists($stuList{$label})) {
-    return $proto->new($label);
+    my $stu = $proto->new($label);
+    $stu->{MASTER} = $targetMaster;
   }
   return $stuList{$label};
+}
+
+sub master {
+  my $self = shift;
+
+  return $self->{MASTER};
 }
 
 sub host {
   my $self = shift;
 
   return $self->{HOST};
+}
+
+#
+# Return a list of all media servers known to the target master.  If no
+# target master is supplied, return all known media servers.
+sub mediaServers {
+  my $proto = shift;
+  my $targetMaster = shift;
+
+
+  my %names;
+  my @list;
+  for my $su ($proto->list($targetMaster)) {
+    push @list, $su->host if (!exists($names{$su->host->name}));
+    $names{$su->host->name} += 1;
+  }
+
+  return (@list);
 }
 
 sub type {
@@ -136,6 +201,33 @@ sub robot {
   my $self = shift;
 
   return $self->{ROBOT};
+}
+
+sub onDemand {
+  my $self = shift;
+
+  return $self->{ONDEMAND};
+}
+
+#
+# NBU stores the maximum number of multiplexed jobs per drive but this routine
+# maps the degenerate case to 0 so a simple test for multi-plexing can be done on its
+# return value
+sub mpx {
+  my $self = shift;
+
+  if ($self->{MAXPX} == 1) {
+    return 0;
+  }
+  else {
+    return $self->{MAXMPX};
+  }
+}
+
+sub maximumFragmentSize {
+  my $self = shift;
+
+  return $self->{MAXFRAGSIZE};
 }
 
 1;

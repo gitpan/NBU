@@ -8,6 +8,8 @@ package NBU::Media;
 use strict;
 use Carp;
 
+use Date::Parse;
+
 use NBU::Robot;
 
 BEGIN {
@@ -15,7 +17,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.28 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -92,10 +94,10 @@ my %mediaList;
 my %barcodeList;
 
 sub new {
-  my $Class = shift;
+  my $proto = shift;
   my $media = {};
 
-  bless $media, $Class;
+  bless $media, $proto;
 
   if (@_) {
     my $mediaID = shift;
@@ -105,10 +107,13 @@ sub new {
   return $media;
 }
 
+my $filled;
 sub populate {
-  my $Class = shift;
+  my $proto = shift;
   my $updateRobot = shift;
   my $mmdbHost;
+
+  $filled = 0;
 
   my @masters = NBU->masters;  my $master = $masters[0];
 
@@ -123,30 +128,36 @@ sub populate {
         print STDERR "New media $1 encountered when old one ".$volume->id." still active!\n";
         exit 0;
       }
-      $volume = NBU::Media->new($1);
+      $volume = NBU::Media->byID($1);
+      if (!defined($volume)) {
+	$volume = NBU::Media->new($1);
+	$filled += 1;
+      }
       $volume->{MMLOADED} = 1;
       $volume->mmdbHost($mmdbHost);
+
+      $filled += 1;
       next;
     }
 
     if (/^density = ([\S]+) \(([\d]+)\)/) {
-      $volume->density($2);
+      $volume->{DENSITY} = $densities{$2};
       next;
     }
     if (/^allocated = .* \(([0-9]+)\)/) {
-      $volume->allocated($1);
+      $volume->{ALLOCATED} = $1;
       next;
     }
     if (/^last_written = .* \(([0-9]+)\)/) {
-      $volume->lastWritten($1);
+      $volume->{LASTWRITTEN} = $1;
       next;
     }
     if (/^expiration = .* \(([0-9]+)\)/) {
-      $volume->expires($1);
+      $volume->{LASTIMAGEEXPIRES} = $1;
       next;
     }
     if (/^last_read = .* \(([0-9]+)\)/) {
-      $volume->lastRead($1);
+      $volume->{LASTREAD} = $1;
       next;
     }
 
@@ -157,7 +168,7 @@ sub populate {
     }
 
     if (/^kbytes = ([\d]+), nimages = ([\d]+), vimages = ([\d]+)/) {
-      $volume->dataWritten($1);
+      $volume->{SIZE} = $1;
       next;
     }
 
@@ -170,7 +181,7 @@ sub populate {
         $result += $d;
         $magnitude *= 16;
       }
-      $volume->status($result);
+      $volume->{STATUS} = $result;
       next;
     }
 
@@ -217,6 +228,8 @@ sub populate {
     $volume = NBU::Media->byID($id);
     if (!defined($volume)) {
       $volume = NBU::Media->new($id);
+
+      $filled += 1;
     }
     $volume->barcode($barcode);
 
@@ -227,13 +240,19 @@ sub populate {
     $volume->{CLEANINGCOUNT} = $cleaningCount;
     $volume->{MOUNTCOUNT} = $mountCount;
     $volume->{MAXMOUNTS} = $maxMounts;
-    $volume->{VOLUMEGROUP} = ($volumeGroup eq "---") ? undef : $volumeGroup,
+    $volume->{GROUP} = ($volumeGroup eq "---") ? undef : $volumeGroup,
 
 
     $volume->{POOL} = NBU::Pool->byID($volumePoolNumber);
     $volume->{PREVIOUSPOOL} = NBU::Pool->byName($previousVolumePool);
 
-    $volume->{OFFSITELOCATION} = $offsiteLocation;
+    $volume->{OFFSITELOCATION} = $offsiteLocation unless ($offsiteLocation eq "-");
+    $volume->{OFFSITESLOT} = $offsiteSlot unless ($offsiteSlot == 0);
+    $volume->{OFFSITESESSIONID} = $offsiteSessionID unless ($offsiteSessionID == 0);
+
+    my $rd = $offsiteReturnDate." ".$offsiteReturnTime;  $rd = str2time($rd);
+    $volume->{OFFSITERETURN} = $rd if (defined($rd));
+
     $volume->{VERSION} = $version;
     $volume->{DESCRIPTION} = $description;
 
@@ -246,12 +265,14 @@ sub populate {
       $volume->robot($robot);
       $volume->slot($slotNumber);
     }
+
+    $volume->{NETBACKUP} = ($status == 1);
   } 
   close($pipe);
 }
 
 sub loadErrors {
-  my $Class = shift;
+  my $proto = shift;
 
   if (open(PIPE, "<".$ENV{HOME}."/media-errors.csv")) {
     # Place this use directive inside an eval to postpone missing
@@ -273,21 +294,21 @@ sub loadErrors {
 }
 
 sub listIDs {
-  my $Class = shift;
+  my $proto = shift;
 
   return (keys %mediaList);
 }
 
 sub listVolumes {
-  my $Class = shift;
+  my $proto = shift;
 
   return (values %mediaList);
 }
 
 sub list {
-  my $Class = shift;
+  my $proto = shift;
 
-  return ($Class->listVolumes);
+  return ($proto->listVolumes);
 }
 
 sub mmdbHost {
@@ -303,7 +324,8 @@ sub density {
   my $self = shift;
 
   if (@_) {
-    $self->{DENSITY} = $densities{shift};
+    my $density = shift;
+    $self->{DENSITY} = $densities{$density};
   }
 
   return $self->{DENSITY};
@@ -354,8 +376,28 @@ sub group {
   my $self = shift;
 
   if (@_) {
+    my $group = shift;
+    my $update;
+
+    if (defined($group)) {
+      $update = !defined($self->{GROUP}) || ($group ne $self->{GROUP});
+    }
+    else {
+      $update = defined($self->{GROUP});
+    }
+    if ($update) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -new_v ".(defined($group) ? $group : "-"), 0);
+      $self->{GROUP} = $group;
+    }
   }
-  return $self->{VOLUMEGROUP};
+  else {
+    $self->populate if (!defined($filled));
+  }
+  return $self->{GROUP};
 }
 
 sub type {
@@ -402,7 +444,7 @@ sub cleaningCount {
 
   if (@_ && $self->cleaningTape) {
     my $newCount = shift;
-    NBU->cmd("vmchange -m ".$self->id." -n $newCount\n");
+    NBU->cmd("vmchange -m ".$self->id." -n $newCount", 0);
     $self->{CLEANINGCOUNT} = $newCount;
   }
   return $self->{CLEANINGCOUNT};
@@ -450,7 +492,7 @@ sub lastMounted {
 }
 
 sub byBarcode {
-  my $Class = shift;
+  my $proto = shift;
   my $barcode = shift;
 
 
@@ -464,7 +506,7 @@ sub byBarcode {
 # The External Volume Serial Number (evsn) is the same as the media ID hence
 # the two variants of id and byID.
 sub byID {
-  my $Class = shift;
+  my $proto = shift;
   my $mediaID = shift;
 
 
@@ -656,7 +698,7 @@ sub maxMounts {
     my $maxMounts = shift;
     NBU->cmd("vmchange".
             " -m ".$self->id.
-            " -maxmounts $maxMounts\n");
+            " -maxmounts $maxMounts", 0);
     $self->{MAXMOUNTS} = $maxMounts;
   }
 
@@ -692,7 +734,7 @@ sub unfreeze {
             " -h ".$self->mmdbHost->name.
             " -ev ".$self->id.
             " -unfreeze\n");
-    $self->{STATUS} &= 0xfffffffe;
+    $self->{STATUS} &= ~0x1;
   }
   return $self;
 }
@@ -703,12 +745,152 @@ sub suspended {
   return $self->{STATUS} & 0x2;
 }
 
+sub unsuspend {
+  my $self = shift;
+
+  if ($self->allocated && ($self->{STATUS} & 0x2)) {
+    # issue unfreeze command:
+    NBU->cmd("bpmedia".
+            " -h ".$self->mmdbHost->name.
+            " -ev ".$self->id.
+            " -unfreeze\n");
+    $self->{STATUS} &= ~0x2;
+  }
+  return $self;
+}
+
+sub imported {
+  my $self = shift;
+
+  return $self->{STATUS} & 0x80;
+}
+
+sub mpx {
+  my $self = shift;
+
+  return $self->{STATUS} & 0x200;
+}
+
+sub offsiteSessionID {
+  my $self = shift;
+
+  if (@_) {
+    my $offsiteSessionID = shift;
+    my $update;
+
+    if (defined($offsiteSessionID)) {
+      $update = !defined($self->{OFFSITESESSIONID}) || ($offsiteSessionID ne $self->{OFFSITESESSIONID});
+    }
+    else {
+      $update = defined($self->{OFFSITESESSIONID});
+    }
+    if ($update) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -offsid ".(defined($offsiteSessionID) ? $offsiteSessionID : "-"), 0);
+      $self->{OFFSITESESSIONID} = $offsiteSessionID;
+    }
+  }
+  return $self->{OFFSITESESSIONID};
+}
+
+sub offsiteReturnDate {
+  my $self = shift;
+
+  if (@_) {
+    my $offsiteReturnDate = shift;
+    my $update;
+
+    if (defined($offsiteReturnDate)) {
+      $update = !defined($self->{OFFSITERETURN}) || ($offsiteReturnDate ne $self->{OFFSITERETURN});
+    }
+    else {
+      $update = defined($self->{OFFSITERETURN});
+    }
+    if ($update) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -offreturn ".(defined($offsiteReturnDate) ? NBU->date($offsiteReturnDate) : "0"), 0);
+      $self->{OFFSITERETURN} = $offsiteReturnDate;
+    }
+  }
+  return $self->{OFFSITERETURN};
+}
+
+sub offsiteLocation {
+  my $self = shift;
+
+  if (@_) {
+    my $offsiteLocation = shift;
+    my $update;
+
+    if (defined($offsiteLocation)) {
+      $update = !defined($self->{OFFSITELOCATION}) || ($offsiteLocation ne $self->{OFFSITELOCATION});
+    }
+    else {
+      $update = defined($self->{OFFSITELOCATION});
+    }
+    if ($update) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -offloc ".(defined($offsiteLocation) ? $offsiteLocation : "-"), 0);
+      $self->{OFFSITELOCATION} = $offsiteLocation;
+    }
+  }
+  return $self->{OFFSITELOCATION};
+}
+
+sub offsiteSlot {
+  my $self = shift;
+
+  if (@_) {
+    my $offsiteSlot = shift;
+    my $update;
+
+    if (defined($offsiteSlot)) {
+      $update = !defined($self->{OFFSITESLOT}) || ($offsiteSlot ne $self->{OFFSITESLOT});
+    }
+    else {
+      $update = defined($self->{OFFSITESLOT});
+    }
+    if ($update) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -offslot ".(defined($offsiteSlot) ? $offsiteSlot : "-"), 0);
+      $self->{OFFSITESLOT} = $offsiteSlot;
+    }
+  }
+  return $self->{OFFSITESLOT};
+}
+
 #
 # Return true, that is a non-zero value, if the tape is indeed full.
 sub full {
   my $self = shift;
 
   return ($self->{STATUS} & 0x8);
+}
+
+#
+# Is the volume allocated to backing up NetBackup itself?  If not, then
+# it is "available" to the media managers
+sub netbackup {
+  my $self = shift;
+
+  return $self->{NETBACKUP};
+}
+sub available {
+  my $self = shift;
+
+  return !$self->{NETBACKUP};
 }
 
 #
@@ -729,8 +911,7 @@ sub eject {
   if ($self->robot) {
     NBU->cmd("vmchange -res"." -m ".$self->id." -mt ".$self->id.
 	      " -rn ".$self->robot->id." -rc1 ".$self->slot." -rh ".$self->robot->host->name.
-	      " -e\n"
-    );
+	      " -e", 0);
     return $self;
   }
   else {

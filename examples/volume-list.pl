@@ -50,13 +50,19 @@ for my $m (sort levelStatusSort @list) {
 
 #print STDERR "Trouble: ".$m->id." does not equal ".$m->barcode."\n" if ($m->id ne $m->barcode);
 
-  print $m->id.
-        ": ".($m->robot ? $m->robot->id : " ").
-        ": ".$m->type.
-        ": ".(defined($m->pool) ? $m->pool->name : "NONE").
-        ": ".(defined($m->group) ? $m->group : "NONE").
-        ($m->allocated ? ": Allocated on ".substr(localtime($m->allocated), 4)." at rl ".$m->retention->level : "").
-        ($m->frozen ? ": Frozen" : "").
-	($m->full ? ": Filled in ".dispInterval($m->fillTime) : "").
-        "\n";
+  print $m->id
+        .": ".($m->robot ? $m->robot->id : " ")
+        .": ".$m->type
+        .": ".(defined($m->pool) ? $m->pool->name : "NONE")
+        .": ".(defined($m->group) ? $m->group : "NONE")
+        .($m->allocated ? ": Allocated ".substr(localtime($m->allocated), 4).": rl ".$m->retention->level : "")
+	.($m->mpx ? ": Multiplexed" : "")
+#	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
+	;
+  if (defined($m->offsiteLocation)) {
+    print " at ".$m->offsiteLocation."/".(defined($m->offsiteSlot) ? sprintf("%4d", $m->offsiteSlot) : "????");
+    print " return ".substr(localtime($m->offsiteReturnDate), 4);
+  }
+  print ": Frozen" if ($m->frozen);
+  print "\n";
 }

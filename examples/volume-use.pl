@@ -11,8 +11,8 @@ getopts('rhda:p:s:l:', \%opts);
 
 NBU->debug($opts{'d'});
 
-$opts{'r'} = ($opts{'s'} =~ /r/);
-$opts{'r'} = ($opts{'s'} =~ /r/);
+$opts{'r'} ||= ($opts{'s'} =~ /r/);
+$opts{'r'} ||= ($opts{'s'} =~ /v/);
 
 my $period = 1;
 my ($mm, $dd, $yyyy);
@@ -22,14 +22,12 @@ if (!$opts{'a'}) {
   $mm = $mon + 1;
   $dd = $mday;
   $yyyy = $year;
-
 }
 else {
   $opts{'a'} =~ /^([\d]{4})([\d]{2})([\d]{2})$/;
   $mm = $2;
   $dd = $3;
   $yyyy = $1;
-
 }
 if ($opts{'p'}) {
   $period = $opts{'p'};
@@ -93,12 +91,14 @@ my %poolUsage;
 my %levelUsage;
 my %poollevelUsage;
 foreach my $k (sort (keys %usedCount)) {
-  my ($pool, $dt, $hostName,$level) = split(':', $k);
+  my ($pool, $dt, $hostName, $level) = split(':', $k);
   my $c = $usedCount{$k};
 
-  my $detail = $hostName." " if (defined($hostName) && ($hostName ne ""));
+  my $detail = "";
+
+  $detail .= $hostName." " if (defined($hostName) && ($hostName ne ""));
   $detail .= "filled $c $pool volumes";
-  $detail .= " at retention level ".NBU::Retention->byLevel($level)->description if (defined($level));
+  $detail .= " at retention level ".NBU::Retention->byLevel($level)->description if (defined($level) && ($level =~ /^[0-9]+$/));
   $detail .= " on $dt\n";
 
   if (($opts{'s'} =~ /v/) && ($opts{'s'} =~ /r/)) {
@@ -131,7 +131,7 @@ if (($opts{'s'} =~ /v/) && ($opts{'s'} =~ /r/)) {
 
     my $velocity = int($fillTime{$k} / $c);
 
-    print "Over $span days, $pool consumed $c volumes at retention level "
+    print "$pool consumed $c volumes at retention level "
 	    .NBU::Retention->byLevel($level)->description
 	    ."; at an average velocity of ".dispInterval($velocity)
 	    ."\n";
@@ -139,7 +139,7 @@ if (($opts{'s'} =~ /v/) && ($opts{'s'} =~ /r/)) {
     $previousPool = $pool;
     $poolCount += $c;
   }
-  print "$previousPool uses a total of $poolCount volumes\n";
+  print "$previousPool used a total of $poolCount volumes\n";
 }
 elsif ($opts{'s'} =~ /v/) {
   for my $pool (sort (keys %poolUsage)) {
