@@ -1,6 +1,7 @@
 #!/usr/local/bin/perl -w
 
 use strict;
+use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 
@@ -83,3 +84,71 @@ for my $clientName (@ARGV) {
     }
   }
 }
+
+=head1 NAME
+
+history.pl - Display host backup history
+
+=head1 SYNOPSIS
+
+history.pl [options...] <hostname>
+
+=head1 DESCRIPTION
+
+Using a variety of NetBackup command line tools, B<history.pl> pulls together a complete history
+of all images currently in the NetBackup catalog pertaining to the referenced host.  By default
+this listing will show only the most recent run of each policy/schedule combination.  The B<-a>
+option will cause all images to get listed.
+
+=head1 OPTIONS
+
+=over 4
+
+=item L<-a|-a>
+
+List all occurrences of each policy/schedule combination rather than just the first one.
+
+=item L<-n|-n>
+
+For the purposes of determining policy/schedule combinations, the default is to key off
+each schedule's type.  This option will use schedule names instead.
+
+=item L<-b|-b>
+
+In the image listing, include the backupid of each image.  This is useful if you are
+constructing a restore command line.
+
+=item L<-f|-f>
+
+For each image the individual fragments are listed out.  Note that in environments where
+storage units limit images to small fragment sizes this output can be quite voluminous.  However,
+this option is a convenient way to get at the list of tapes used by each image.
+
+=item L<-R|-R>
+
+Recursively list out all the files backed up as part of this image.
+
+=item L<-c pattern|-cpattern>
+
+The pattern will be applied to each policy name and only the matching policies will be displayed.  Note
+that the (arbitrary) image counter still counts each and every image.
+
+=back
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<toc.pl|toc.pl>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

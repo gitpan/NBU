@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -166,6 +166,21 @@ sub loadConfig {
   }
     
   close($pipe);
+
+  # The -f option used to tell us, when we were media managers,
+  # which host was our master with the "Client of" line.  With 4.5 this
+  # feature has been removed.  Now we run bpgetconfig against ourselves
+  # and use the "first server in the list must be the master" rule.
+  if (!defined($self->{MASTER})) {
+    $pipe = NBU->cmd("bpgetconfig -X |");
+    while (<$pipe>) {
+      if (/SERVER = ([\S]+)/) {
+	$self->{MASTER} = NBU::Host->new($1);
+	last;
+      }
+    }
+    close($pipe);
+  }
 }
 
 sub clientOf {

@@ -17,7 +17,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -247,14 +247,14 @@ print "Policy ".$self->name." has undefined schedule?\n" if (!defined($newSchedu
   if ($self->policyAware && ($newSchedule->type eq "UBAK")) {
     if (!defined($self->{POLICIES})) {
       $self->{POLICIES} = [];
-      $listR = $self->{POLICIES};
     }
+    $listR = $self->{POLICIES};
   }
   else {
     if (!defined($self->{SCHEDULES})) {
       $self->{SCHEDULES} = [];
-      $listR = $self->{SCHEDULES};
     }
+    $listR = $self->{SCHEDULES};
   }
 
   push @$listR, $newSchedule;

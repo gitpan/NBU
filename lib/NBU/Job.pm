@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.39 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.41 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -30,6 +30,7 @@ sub new {
   my $Class = shift;
   my $job = {
     MOUNTLIST => {},
+    SIZE => 0,
   };
 
   bless $job, $Class;
@@ -53,17 +54,10 @@ sub new {
 sub list {
   my $Class = shift;
 
-  my @jobList;
-  foreach my $pidArray (values %pids) {
-    foreach my $job (@$pidArray) {
-      push @jobList, $job;
-    }
-  }
-
-  return @jobList;
+  return (values %jobs);
 }
 
-my @jobTypes = ("Backup", undef, "Restore", undef, undef, undef, "Catalog");
+my @jobTypes = ("Backup", "Archive", "Restore", undef, undef, "Import", "Catalog");
 my $asOf;
 my $fromFile = $ENV{"HOME"}."/.alljobs.allcolumns";
 my ($jobPipe, $refreshPipe);
@@ -72,9 +66,11 @@ sub loadJobs {
   my $master = shift;
   my $readFromFile = shift;
   my $logFile = shift;
+  my $alternateFromFile = shift;
 
   if (defined($readFromFile)) {
-    die "Cannot open previous job log file \"$fromFile\"\n" unless open(PIPE, "<$fromFile");
+    my $file = defined($alternateFromFile) ? $alternateFromFile : $fromFile;
+    die "Cannot open previous job log file \"$file\"\n" unless open(PIPE, "<$file");
     $jobPipe = *PIPE{IO};
     my @stat = stat(PIPE);  $asOf = $stat[9];
   }
@@ -92,7 +88,7 @@ sub loadJobs {
   while ($jobRowCount--) {
     my $jobDescription;
     if (!($jobDescription = <$jobPipe>)) {
-      print STDERR "Failed to read from job pipe ($jobPipe)\n";
+      print STDERR "Failed to read from job pipe ($jobPipe) when $jobRowCount jobs were yet expected...\n";
       last;
     }
     parseJob($master, $jobDescription);
@@ -125,8 +121,6 @@ sub refreshJobs {
 
   return $asOf;
 }
-
-
 
 sub parseJob {
   my $master = shift;
@@ -174,14 +168,14 @@ sub parseJob {
 
     $job->start($started);
 
-    $job->type($jobTypes[$jobType]) if ($jobType ne "");
+    $job->{TYPE} = $jobTypes[$jobType] if ($jobType ne "");
 
     $job->{STUNIT} = NBU::StorageUnit->byLabel($stUnit) if (defined($stUnit) && ($stUnit !~ /^[\s]*$/));
     my $backupID = $clientName."_".$started;
     my $image = $job->image($backupID);
-    my $class = $image->class(NBU::Class->new($className, $classType, $master));
-    $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
-    $image->client(NBU::Host->new($clientName));
+    $job->{CLASS} = my $class = $image->class(NBU::Class->new($className, $classType, $master));
+    $job->{SCHEDULE} = $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
+    $job->{CLIENT} = $image->client(NBU::Host->new($clientName));
   }
 
   #
@@ -192,7 +186,7 @@ sub parseJob {
   }
 
   $job->state($state);
-  $job->try($currentTry);
+  $job->{TRY} = ($currentTry ne "") ? $currentTry : undef;
 
   #
   # Extract the list of paths (either in the class definition's include list
@@ -215,6 +209,13 @@ sub parseJob {
       my ($tryPID, $tryStUnit, $tryServer,
 	  $tryStarted, $tryElapsed, $tryEnded,
 	  $tryStatus, $description, $tryProgressCount, @tryRest) = @rest;
+
+      
+      my $backupID = $job->client."_".$tryStarted;
+      my $image = $job->image($backupID);
+      $image->class($job->class);
+      $image->schedule($job->schedule);
+      $image->client($job->client);
 
       $elapsed = $tryElapsed;
       for my $t (1..$tryProgressCount) {
@@ -243,7 +244,7 @@ sub parseJob {
 	elsif ($msg =~ /^using ([\S]+)/) {
 	}
 	elsif ($msg =~ /^mounting ([\S]+)/) {
-	  my $volume = NBU::Media->byID($1);
+	  my $volume = NBU::Media->new($1);
 	  $job->startMounting($now, $volume);
 	}
 	elsif ($msg =~ /mounted/) {
@@ -279,11 +280,20 @@ print "$jobID\:$i\: $msg\n";
   }
 
   if ($job->state eq "active") {
+    my $lastSize = $job->{SIZE} if (defined($job->{SIZE}));
+    my $lastElapsed = $job->{ELAPSED} if (defined($job->{ELAPSED}));
+
     $job->{CURRENTFILE} = $currentFile;
-    $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
+    my $size = $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
     $job->{FILECOUNT} = $filesWritten if ($filesWritten ne "");
     $job->{OPERATION} = $operation if ($operation ne "");
     $job->{ELAPSED} = $elapsed if ($elapsed ne "");
+
+    if (($job->type eq "Backup") || ($job->type eq "Restore")) {
+      if ((defined($lastSize) && defined($size)) && (defined($lastElapsed) && ($elapsed ne ""))) {
+	$job->{ISPEED} = ($size - $lastSize) / ($elapsed - $lastElapsed);
+      }
+    }
   }
   elsif ($job->state eq "done") {
     $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
@@ -388,7 +398,12 @@ sub image {
   my $self = shift;
 
   if (@_) {
-    my $image = NBU::Image->new(shift);
+    my $backupid = shift;
+    my $image;
+    if (!defined($image = $self->{IMAGE}) || ($image->id ne $backupid)) {
+      $image = NBU::Image->new($backupid);
+      $self->{IMAGE} = $image;
+    }
     $self->{IMAGE} = $image;
   }
 
@@ -396,30 +411,23 @@ sub image {
 }
 
 #
-# The client and class methods on Job are merely short hand
-# for retrieving these attributes from the Job's Image.
 sub client {
   my $self = shift;
-  my $image = $self->{IMAGE};
 
-  return $image->client;
+  return $self->{CLIENT};
 }
 
 #
-# A job's class is really the class of the image it is creating.  Just
-# as the job's schedule is the schedule of the image of the job being
 # written.
 sub class {
   my $self = shift;
-  my $image = $self->{IMAGE};
 
-  return $image->class;
+  return $self->{CLASS};
 }
 sub schedule {
   my $self = shift;
-  my $image = $self->{IMAGE};
 
-  return $image->schedule;
+  return $self->{SCHEDULE};
 }
 
 sub start {
@@ -458,6 +466,7 @@ my %successCodes = (
 sub success {
   my $self = shift;
 
+  return 1 if ($self->state ne "done");
   return exists($successCodes{$self->{STATUSCODE}});
 }
 
@@ -800,6 +809,22 @@ sub dataWritten {
   my $self = shift;
 
   return $self->{SIZE};
+}
+
+sub speed {
+  my $self = shift;
+
+  if ($self->success) {
+    return ($self->dataWritten / $self->elapsedTime);
+  }
+  return undef;
+}
+
+sub ispeed {
+  my $self = shift;
+
+  return $self->speed if ($self->state eq "done");
+  return $self->{ISPEED};
 }
 
 sub filesWritten {

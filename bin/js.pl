@@ -40,6 +40,16 @@ if ($opts{'p'}) {
 }
 
 
+sub sortBySpeed {
+  my $result = 0;
+  my $aSpeed = $a->success ? ($a->dataWritten / $a->elapsedTime) : -1;
+  my $bSpeed = $b->success ? ($b->dataWritten / $b->elapsedTime) : -1;
+
+  $result = ($bSpeed <=> $aSpeed);
+  $result = ($b->id <=> $a->id) if ($result == 0);
+  return $result;
+}
+
 sub sortByClient {
   my $result;
 
@@ -54,8 +64,12 @@ sub sortByID {
   $result = ($b->id <=> $a->id);
   return $result;
 }
-$opts{'o'} = 'id' if (!defined($opts{'o'}));
-my $sortOrder = ($opts{'o'} eq 'client') ? \&sortByClient : \&sortByID;
+
+my $sortOrder = \&sortByID;
+if ($opts{'o'}) {
+  $sortOrder = \&sortByClient if ($opts{'o'} eq 'client');
+  $sortOrder = \&sortBySpeed if ($opts{'o'} eq 'speed');
+}
 
 
 my %stateCodes = (
@@ -84,10 +98,10 @@ if ($opts{'v'}) {
 else {
   $hdr .= " ".sprintf("%-23s", "         CLASS");
 }
-$hdr .= " ".sprintf("%7s", " JOBID ");
+$hdr .= " ".sprintf("%9s", "  JOBID  ");
 $hdr .= " ".sprintf("%8s", "  START ");
 $hdr .= " ".sprintf("%1s", "R");
-$hdr .= " ".sprintf("%-8s", "  STU");
+$hdr .= " ".sprintf("%-10s", "   STU");
 $hdr .= " ".sprintf("%3s", "OP");
 $hdr .= " ".sprintf("%-8s", "  TIME");
 $hdr .= " ".sprintf("%-7s", "  FILES");
@@ -130,7 +144,7 @@ for my $job (sort $sortOrder (@jl)) {
     }
     $classID = sprintf("%-".$classIDlength."s", $classID);
 
-    my $jid = sprintf("%7u", $job->id);
+    my $jid = sprintf("%7u-%1u", $job->id, defined($job->try) ? $job->try : 0);
     my $state = $stateCodes{$job->state};
 
 
@@ -141,10 +155,10 @@ for my $job (sort $sortOrder (@jl)) {
     print "$who $classID $jid $startTime $state";
 
     if (my $stu = $job->storageUnit) {
-      printf(" %8s ", $stu->label);
+      printf(" %10s ", $stu->label);
     }
     else {
-      printf(" %8s ", "");
+      printf(" %10s ", "");
     }
 
     if ($state eq "D") {

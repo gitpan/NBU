@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.19 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -106,8 +106,11 @@ sub populate {
 
       if ($evsn ne "-") {
 	# Unfortunately there is no way to find out which job is using this drive :-(
-	my $mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $drive, time);
-        $drive->use($mount, time);
+	if (defined(my $volume = NBU::Media->new($evsn))) {
+	  my $mount = NBU::Mount->new(undef, $volume, $drive, time);
+          $drive->use($mount, time);
+	}
+else {die("Cannot located media $evsn?\n");}
       }
 
       $driveCount++;
@@ -118,13 +121,22 @@ sub populate {
   return $driveHosts{$server->name};
 }
 
-my $detailed;
+#
+# Try to get more detail on this drive.
+# If the host to query is not specified, first look to the drive's
+# host or else the local master server for this information
 sub loadDriveDetail {
+  my $self = shift;
+  my $server = shift;
 
-  my @masters = NBU->masters;  my $master = $masters[0];
+  if (!defined($server)) {
+    $server = $self->host;
+  }
+  if (!defined($server)) {
+    my @masters = NBU->masters;  $server = $masters[0];
+  }
 
-  my $pipe = NBU->cmd("vmglob -h ".$master->name." -listall -java |");
-  $detailed = 0;
+  my $pipe = NBU->cmd("vmglob -h ".$server->name." -listall -java |");
   while (<$pipe>) {
     next unless (/VMGLOB... drive /);
     chop;
@@ -136,11 +148,11 @@ sub loadDriveDetail {
       $drive->{SERIALNUMBER} = $serial;
       $drive->{ROBOTDRIVEINDEX} = $robotDriveIndex;
       $drive->{WWNAME} = $wwName if ($wwName ne "-");
-    }
-    $detailed++;
-  }
 
-  return $detailed;
+      $drive->{DETAILED} = 1;
+    }
+  }
+  $self->{DETAILED} = 1;
 }
 
 #
@@ -185,12 +197,12 @@ sub updateStatus {
       }
       elsif ($mount->volume->evsn ne $evsn) {
         $drive->free(time);
-	$mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $drive, time);
+	$mount = NBU::Mount->new(undef, NBU::Media->new($evsn), $drive, time);
 	$drive->use($mount, time);
       }
     }
     elsif (!$drive->busy && ($evsn ne "-")) {
-      my $mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $drive, time);
+      my $mount = NBU::Mount->new(undef, NBU::Media->new($evsn), $drive, time);
       $drive->use($mount, time);
     }
   }
@@ -314,14 +326,14 @@ sub name {
 sub serialNumber {
   my $self = shift;
 
-  NBU::Drive->loadDriveDetail if (!defined($detailed));
+  $self->loadDriveDetail if (!defined($self->{DETAILED}));
   return $self->{SERIALNUMBER};
 }
 
 sub worldWideName {
   my $self = shift;
 
-  NBU::Drive->loadDriveDetail if (!defined($detailed));
+  $self->loadDriveDetail if (!defined($self->{DETAILED}));
   return $self->{WWNAME};
 }
 
@@ -390,6 +402,7 @@ sub robot {
 sub robotDriveIndex {
   my $self = shift;
 
+  $self->loadDriveDetail if (!defined($self->{DETAILED}));
   return $self->{ROBOTDRIVEINDEX};
 }
 

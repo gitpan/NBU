@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.1 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.2 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -23,6 +23,7 @@ BEGIN {
 
 my %legit;
 my %licenses;
+my %featureDescriptions;
 
 sub new {
   my $proto = shift;
@@ -31,18 +32,21 @@ sub new {
   bless $License, $proto;
 
   if (@_) {
+    my $server = shift;
     my $key = shift;
 
-    if (exists($licenses{$key})) {
-      return $licenses{$key};
+    my $uniqueKey = $server->name.":".$key;
+
+    if (exists($licenses{$uniqueKey})) {
+      return $licenses{$uniqueKey};
     }
 
-    $License->{KEY} = shift;
+    $License->{KEY} = $key;
     $License->{BASEKEY} = shift;
 
     $License->{FEATURES} = [];
 
-    $licenses{$key} = $License;
+    $licenses{$uniqueKey} = $License;
   }
 
   return $License;
@@ -51,6 +55,7 @@ sub new {
 sub populate {
   my $proto = shift;
   my $master = shift;
+  my $mmOnlyP = shift;
   my @masters;
 
   if (!defined($master)) {
@@ -72,7 +77,7 @@ sub populate {
       chop;
       if (/^[\S]+/) {
 	($baseKey, $key) = split;
-	$l = $proto->new($key, $baseKey);
+	$l = $proto->new($master, $key, $baseKey);
 	next;
       }
       if (/^  file version[\s]+= ([\S]+)$/) {
@@ -128,8 +133,11 @@ sub populate {
 	next;
       }
       if (/^  Feature ID[\s]+= ([\S]+) (.*)$/) {
+	my $id = $1;
+	my $description = $2;
 	my $fRef = $l->{FEATURES};
-	push @$fRef, $1;
+	push @$fRef, $id;
+	$featureDescriptions{$id} = $description;
 	next;
       }
       if (/^  Expiration[\s]+= (Not e|E)xpired (.*)$/) {
@@ -146,6 +154,16 @@ sub populate {
       $legit{$master->name} += 1;
     }
     close($pipe);
+
+    #
+    # If we're inspecting a master, retrieve license keys from active
+    # media managers as well
+    next if ($mmOnlyP);
+    foreach my $ms (NBU::StorageUnit->mediaServers($master)) {
+      next if (exists($legit{$ms->name}));
+      NBU::License->populate($ms, 1);
+    }
+
   }
 }
 
@@ -250,6 +268,13 @@ sub licensesForFeature {
     }
   }
   return (values %list);
+}
+
+sub featureDescription {
+  my $proto = shift;
+  my $featureCode = shift;
+
+  return $featureDescriptions{$featureCode};
 }
 
 1;

@@ -1,6 +1,7 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
 
-#use strict;
+use strict;
+use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
@@ -46,7 +47,7 @@ sub levelStatusSort {
   return $a->allocated <=> $b->allocated;
 }
 
-my $csv, $io;
+my ($csv, $io);
 if ($opts{'c'}) {
   eval "use Text::CSV_XS";
   $csv = Text::CSV_XS->new();
@@ -77,12 +78,12 @@ for my $m (sort levelStatusSort @list) {
 	  .": ".(defined($m->pool) ? $m->pool->name : "NONE")
 	  .": ".(defined($m->group) ? $m->group : "NONE")
 	  .($m->allocated ? ": Allocated ".substr(localtime($m->allocated), 4).": rl ".$m->retention->level : "")
-	  .($m->mpx ? ": Multiplexed" : "")
-  #	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
+#	  .($m->mpx ? ": Multiplexed" : "")
+#	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
 	  ;
     if (defined($m->offsiteLocation)) {
       print " at ".$m->offsiteLocation."/".(defined($m->offsiteSlot) ? sprintf("%4d", $m->offsiteSlot) : "????");
-      print " return ".substr(localtime($m->offsiteReturnDate), 4);
+      print " return ".(defined($m->offsiteReturnDate) ? substr(localtime($m->offsiteReturnDate), 4) : "Never");
     }
     print ": Frozen" if ($m->frozen);
   }

@@ -10,7 +10,7 @@ use Date::Parse;
 use NBU;
 
 my %opts;
-getopts('vftdw:c:s:', \%opts);
+getopts('hvftdw:c:s:', \%opts);
 
 my $window = defined($opts{'w'}) ? $opts{'w'} : 10;
 my $controlSize = defined($opts{'c'}) ? $opts{'c'} : 5 * 1024;
@@ -23,8 +23,15 @@ NBU->debug($opts{'d'});
 #
 # The class representing the SAP backup we're interested in and a target date/time are
 # all we need:
-if (@ARGV != 2) {
-  print STDERR "Usage: refresh.pl <SAP-INSTANCE> <time-of-split>\n";
+if ((@ARGV != 2) || $opts{'h'}) {
+  print STDERR <<EOT;
+Usage: refresh.pl <SAP-INSTANCE> <time-of-split>
+Options:
+  -s <count>  Number of backups to skip backwards
+  -f          Force volume list even if not all archive logs can be found
+  -v          Display decision process when hunting for backup images
+  -t          Only list volume ids
+EOT
   exit -1;
 }
 

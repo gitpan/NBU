@@ -19,6 +19,19 @@ could use this:
 otherwise simply go for it:
 	make install
 
+As of $Date: 2002/11/22 02:56:40 $, NBU and/or its scripts and examples require the following
+additional modules from cpan:
+	Carp
+	Date::Parse
+	Getopt::Std
+	IPC::Open2
+	Time::Local
+
+	Curses
+	XML::Simple
+	XML::XPath::XMLParser
+	XML::XPath
+
 To date the author has not first hand tested the installation in a Windows
 environment so if you find yourself stuck there, please contact him at:
 	pwinkeler@pbnj-solutions.com

@@ -1,4 +1,4 @@
-#
+#}}
 # Copyright (c) 2002 Paul Winkeler.  All Rights Reserved.
 # This program is free software; you may redistribute it and/or modify it under
 # the same terms as Perl itself.
@@ -17,7 +17,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.31 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.33 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -42,26 +42,26 @@ BEGIN {
 my %mediaCodes = (
   'DLT' => 11,
   'DLT_CLN'=> 12,
-  'DLT2    ' => 16,
+  'DLT2' => 16,
   'DLT2_CLN' => 17,
-  'DLT3    ' => 26,
+  'DLT3' => 26,
   'DLT3_CLN' => 27,
   'HCART' => 6,
-  'HC_CLN  ' => 13,
-  'HCART2  ' => 14,
-  'HC2_CLN ' => 15,
-  'HCART3  ' => 24,
-  'HC3_CLN ' => 25,
+  'HC_CLN' => 13,
+  'HCART2' => 14,
+  'HC2_CLN' => 15,
+  'HCART3' => 24,
+  'HC3_CLN' => 25,
   '4MM' => 9,
   '4MM_CLN' => 10,
   '8MM' => 4,
   '8MM_CLN' => 5,
-#  '8MM2    ' => 
+#  '8MM2' => 
 #  '8MM2_CLN' => 
-#  'D2      ' => 
-#  'D2_CLN  ' => 
-  'DTF     ' => 22,
-  'DTF_CLN ' => 23,
+#  'D2' => 
+#  'D2_CLN' => 
+  'DTF' => 22,
+  'DTF_CLN' => 23,
   'DEFAULT' => 0,
 );
 
@@ -101,6 +101,13 @@ sub new {
 
   if (@_) {
     my $mediaID = shift;
+    my $voldbHost = shift;
+
+    if (exists($mediaList{$mediaID})) {
+      return $mediaList{$mediaID};
+    }
+
+    $media->{VOLDBHOST} = $voldbHost;
     $media->{EVSN} = $mediaID;
     $mediaList{$media->{EVSN}} = $media;
   }
@@ -111,14 +118,114 @@ my $filled;
 sub populate {
   my $proto = shift;
   my $updateRobot = shift;
-  my $mmdbHost;
+
+  my $pipe;
+  my $volume;
 
   $filled = 0;
 
-  my @masters = NBU->masters;  my $master = $masters[0];
+  #
+  # Have to force the pool information to load or we dead-lock.  It appears
+  # the VM database deamon is single threaded and won't answer a pool query
+  # until the volume listing is completed...
+  NBU::Pool->populate;
 
-  my $pipe = NBU->cmd("bpmedialist -L |");
-  my $volume;
+  #
+  # The rule is to populate with information from all the volume databases
+  # maintained by the master and its active media servers (allowing for the
+  # master in fact not to be a media server).
+  my %voldbHosts;
+  my @masters = NBU->masters;  my $master = $masters[0];
+  $voldbHosts{$master->name} = $master;
+  foreach my $ms (NBU::StorageUnit->mediaServers($master)) {
+    $voldbHosts{$ms->name} = $ms;
+  }
+
+  foreach my $voldbHost (values %voldbHosts) {
+    $pipe = NBU->cmd("vmquery -a -w -h ".$voldbHost->name." |");
+    $_ = <$pipe>; $_ = <$pipe>; $_ = <$pipe>;
+    while (<$pipe>) {
+      my ($id,
+	  $opticalPartner,
+	  $mediaCode,
+	  $barcode, $barcodePartner,
+	  $robotHostName, $robotType, $robotNumber, $slotNumber,
+	  $side,
+	  $volumeGroup,
+	  $volumePool, $volumePoolNumber, $previousVolumePool,
+	  $mountCount, $maxMounts, $cleaningCount,
+	  $creationDate, $creationTime,
+	  $assignDate, $assignTime,
+	  $firstMountDate, $firstMountTime,
+	  $lastMountDate, $lastMountTime,
+	  $expirationDate, $expirationTime,
+	  $status,
+	  $offsiteLocation,
+	  $offsiteSentDate, $offsiteSentTime,
+	  $offsiteReturnDate, $offsiteReturnTime,
+	  $offsiteSlot,
+	  $offsiteSessionID,
+	  $version,
+	  $description,
+	)
+	= split(/[\s]+/, $_, 37);
+
+      #
+      # "Normal" installations will not use the same barcode in more than one volume
+      # database.  Thus our test here more or less expects not to find this id:
+      $volume = NBU::Media->byID($id, $voldbHost);
+      if (defined($volume)) {
+	print STDERR "Volume $id in voldb on ".$voldbHost->name." conflicts with that on ".$volume->voldbHost->name."\n" if (NBU->debug);
+	next;
+      }
+      else {
+	$volume = NBU::Media->new($id, $voldbHost);
+
+	$filled += 1;
+      }
+
+      $volume->barcode($barcode);
+
+      if (!exists($mediaCodes{$mediaCode})) {
+      }
+      $volume->{MEDIATYPE} = $mediaCodes{$mediaCode};
+
+      $volume->{CLEANINGCOUNT} = $cleaningCount;
+      $volume->{MOUNTCOUNT} = $mountCount;
+      $volume->{MAXMOUNTS} = $maxMounts;
+      $volume->{GROUP} = ($volumeGroup eq "---") ? undef : $volumeGroup,
+
+
+      $volume->{POOL} = NBU::Pool->byID($volumePoolNumber);
+      $volume->{PREVIOUSPOOL} = NBU::Pool->byName($previousVolumePool);
+
+      $volume->{OFFSITELOCATION} = $offsiteLocation unless ($offsiteLocation eq "-");
+      $volume->{OFFSITESLOT} = $offsiteSlot unless (($offsiteSlot eq "-") || ($offsiteSlot == 0));
+      $volume->{OFFSITESESSIONID} = $offsiteSessionID unless (($offsiteSessionID eq "-") || ($offsiteSessionID == 0));
+
+      my $rd = $offsiteReturnDate." ".$offsiteReturnTime;  $rd = str2time($rd);
+      $volume->{OFFSITERETURN} = $rd if (defined($rd));
+
+      $volume->{VERSION} = $version;
+      $volume->{DESCRIPTION} = $description;
+
+      if ($updateRobot && ($robotType ne "NONE")) {
+	my $robot;
+	if (!defined($robot = NBU::Robot->byID($robotNumber))) {
+	  $robot = NBU::Robot->new($robotNumber, $robotType);
+	}
+	$robot->insert($slotNumber, $volume);
+	$volume->robot($robot);
+	$volume->slot($slotNumber);
+      }
+
+      $volume->{NETBACKUP} = ($status == 1);
+    } 
+    close($pipe);
+  }
+
+  $pipe = NBU->cmd("bpmedialist -L |");
+  my $mmdbHost;
   while (<$pipe>) {
     if (/^Server Host = ([\S]+)$/) {
       $mmdbHost = NBU::Host->new($1);
@@ -130,18 +237,19 @@ sub populate {
       }
       $volume = NBU::Media->byID($1);
       if (!defined($volume)) {
+	print STDERR "Media id $1 in mmdb on ".$mmdbHost->name." was not found in any voldb!\n" if (NBU->debug);
 	$volume = NBU::Media->new($1);
 	$filled += 1;
       }
       $volume->{MMLOADED} = 1;
-      $volume->mmdbHost($mmdbHost);
+      $volume->{MMDBHOST} = $mmdbHost;
 
       $filled += 1;
       next;
     }
 
     if (/^density = ([\S]+) \(([\d]+)\)/) {
-      $volume->{DENSITY} = $densities{$2};
+      $volume->{DENSITY} = $2;
       next;
     }
     if (/^allocated = .* \(([0-9]+)\)/) {
@@ -169,17 +277,18 @@ sub populate {
 
     if (/^kbytes = ([\d]+), nimages = ([\d]+), vimages = ([\d]+)/) {
       $volume->{SIZE} = $1;
+      $volume->{IMAGECOUNT} = $2;
+      $volume->{VIMAGECOUNT} = $3;
       next;
     }
 
     if (/^status = 0x([0-9A-Fa-f]+), /) {
       my $status = $1;
       my $result = 0;
-      my $magnitude = 1;
       foreach my $d (split(/ */, $status)) {
-        $result *= $magnitude;
+	$d =~ tr/a-z/A-Z/;  $d = (ord($d) - ord('A') + 10) if ($d =~ /[A-F]/);
+        $result *= 16;
         $result += $d;
-        $magnitude *= 16;
       }
       $volume->{STATUS} = $result;
       next;
@@ -190,84 +299,6 @@ sub populate {
       next;
     }
   }
-  close($pipe);
-
-  #
-  # Have to force the pool information to load or we dead-lock.  It appears
-  # the VM database deamon is single threaded and won't answer a pool query
-  # until the volume listing is completed...
-  NBU::Pool->populate;
-
-  $pipe = NBU->cmd("vmquery -a -w -h ".$master->name." |");
-  $_ = <$pipe>; $_ = <$pipe>; $_ = <$pipe>;
-  while (<$pipe>) {
-    my ($id,
-        $opticalPartner,
-        $mediaCode,
-        $barcode, $barcodePartner,
-        $robotHostName, $robotType, $robotNumber, $slotNumber,
-        $side,
-        $volumeGroup,
-        $volumePool, $volumePoolNumber, $previousVolumePool,
-        $mountCount, $maxMounts, $cleaningCount,
-        $creationDate, $creationTime,
-        $assignDate, $assignTime,
-        $firstMountDate, $firstMountTime,
-        $lastMountDate, $lastMountTime,
-        $expirationDate, $expirationTime,
-        $status,
-        $offsiteLocation,
-        $offsiteSentDate, $offsiteSentTime,
-        $offsiteReturnDate, $offsiteReturnTime,
-        $offsiteSlot,
-        $offsiteSessionID,
-        $version,
-        $description,
-      )
-      = split(/[\s]+/, $_, 37);
-    $volume = NBU::Media->byID($id);
-    if (!defined($volume)) {
-      $volume = NBU::Media->new($id);
-
-      $filled += 1;
-    }
-    $volume->barcode($barcode);
-
-    if (!exists($mediaCodes{$mediaCode})) {
-    }
-    $volume->{MEDIATYPE} = $mediaCodes{$mediaCode};
-
-    $volume->{CLEANINGCOUNT} = $cleaningCount;
-    $volume->{MOUNTCOUNT} = $mountCount;
-    $volume->{MAXMOUNTS} = $maxMounts;
-    $volume->{GROUP} = ($volumeGroup eq "---") ? undef : $volumeGroup,
-
-
-    $volume->{POOL} = NBU::Pool->byID($volumePoolNumber);
-    $volume->{PREVIOUSPOOL} = NBU::Pool->byName($previousVolumePool);
-
-    $volume->{OFFSITELOCATION} = $offsiteLocation unless ($offsiteLocation eq "-");
-    $volume->{OFFSITESLOT} = $offsiteSlot unless (($offsiteSlot eq "-") || ($offsiteSlot == 0));
-    $volume->{OFFSITESESSIONID} = $offsiteSessionID unless (($offsiteSessionID eq "-") || ($offsiteSessionID == 0));
-
-    my $rd = $offsiteReturnDate." ".$offsiteReturnTime;  $rd = str2time($rd);
-    $volume->{OFFSITERETURN} = $rd if (defined($rd));
-
-    $volume->{VERSION} = $version;
-    $volume->{DESCRIPTION} = $description;
-
-    if ($updateRobot && $robotType ne "NONE") {
-      my $robot;
-      if (!defined($robot = NBU::Robot->byID($robotNumber))) {
-        $robot = NBU::Robot->new($robotNumber, $robotType, $robotHostName);
-      }
-      $robot->insert($slotNumber, $volume);
-      $volume->robot($robot);
-      $volume->slot($slotNumber);
-    }
-
-    $volume->{NETBACKUP} = ($status == 1);
-  } 
   close($pipe);
 }
 
@@ -280,6 +311,8 @@ sub loadErrors {
     eval "use Text::CSV_XS";
     my $csv = Text::CSV_XS->new();
 
+    # Throw the header line away and read the remaining error lines
+    $_ = <PIPE>;
     while (<PIPE>) {
       if ($csv->parse($_)) {
 	my @fields = $csv->fields;
@@ -311,6 +344,15 @@ sub list {
   return ($proto->listVolumes);
 }
 
+sub voldbHost {
+  my $self = shift;
+
+  if (@_) {
+    $self->{VOLDBHOST} = shift;
+  }
+  return $self->{VOLDBHOST};
+}
+
 sub mmdbHost {
   my $self = shift;
 
@@ -325,10 +367,10 @@ sub density {
 
   if (@_) {
     my $density = shift;
-    $self->{DENSITY} = $densities{$density};
+    $self->{DENSITY} = $density;
   }
 
-  return $self->{DENSITY};
+  return $densities{$self->{DENSITY}};
 }
 
 sub retention {
@@ -368,6 +410,17 @@ sub pool {
   my $self = shift;
 
   if (@_) {
+    my $newPool = shift;
+
+    if ((my $oldPool = $self->{POOL}) != $newPool) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -p ".$newPool->id);
+      $self->{PREVIOUSPOOL} = $oldPool;
+      $self->{POOL} = $newPool;
+    }
   }
   return $self->{POOL};
 }
@@ -545,9 +598,11 @@ sub byID {
     return $volume;
   }
   else {
-     return NBU::Media->new($mediaID);
+#     return NBU::Media->new($mediaID);
   }
+  return undef;
 }
+
 sub byEVSN {
   my $self = shift;
 
@@ -739,7 +794,7 @@ sub maxMounts {
 sub frozen {
   my $self = shift;
 
-  return $self->{STATUS} & 0x1;
+  return $self->allocated ? ($self->{STATUS} & 0x1) : undef;
 }
 
 sub freeze {
@@ -765,7 +820,7 @@ sub unfreeze {
             " -h ".$self->mmdbHost->name.
             " -ev ".$self->id.
             " -unfreeze\n");
-    $self->{STATUS} &= ~0x1;
+    $self->{STATUS} &= ~0x11;
   }
   return $self;
 }
@@ -788,6 +843,19 @@ sub unsuspend {
     $self->{STATUS} &= ~0x2;
   }
   return $self;
+}
+
+#
+# If a Media Manager allocates a volume only to fail to write to it,
+# it is possible for the volume to be frozen without having any data
+# written to it, i.e. it does not even have a valid header.  This state of
+# the volume is identified by status bit 4.
+# This author has only observed this bit in conjunction with bit 0.  As a
+# matter of fact, unfreezing such a volume will also remove bit 4
+sub unmountable {
+  my $self = shift;
+
+  return $self->{STATUS} & 0x10;
 }
 
 sub multipleRetentions {

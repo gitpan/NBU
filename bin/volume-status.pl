@@ -1,6 +1,7 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
 
 use strict;
+use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
@@ -44,7 +45,8 @@ while (<STDIN>) {
       $status = $volume->pool->name.": ".$status;
     }
     if ($opts{'g'}) {
-      $status = $volume->group.": ".$status;
+      my $g = defined($volume->group) ? $volume->group : "NONE";
+      $status = $g.": ".$status;
     }
 
     if (exists($opts{'m'})) {

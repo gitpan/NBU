@@ -1,11 +1,13 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use Getopt::Std;
-
 use lib '/usr/local/lib/perl5';
 
-use XML::Simple;
+use Getopt::Std;
+
+use XML::XPath;
+use XML::XPath::XMLParser;
+
 use NBU;
 
 my %opts;
@@ -13,22 +15,32 @@ getopts('ohdispf:', \%opts);
 
 NBU->debug($opts{'d'});
 
-my $file = "/usr/local/etc/robot.conf";
+my $file = "/usr/local/etc/robot-conf.xml";
 if (defined($opts{'f'})) {
   $file = $opts{'f'};
   die "No such configuration file: $file\n" if (! -f $file);
 }
 
-my $xs1 = XML::Simple->new(forcearray => 1);
-my $config;
+my $xp;
 if (-f $file) {
-  $config = eval { $xs1->XMLin($file, forcearray => 1) };
-  die "robot-snapshot.pl: Could not parse XML configuration file $file\n" unless (defined($config));
+  $xp = XML::XPath->new(filename => $file);
+  die "robot-snapshot.pl: Could not parse XML configuration file $file\n" unless (defined($xp));
 }
 
 NBU::Media->populate(1);
 
-for my $robot (NBU::Robot->farm) {
+my @list;
+if ($#ARGV > -1 ) {
+  for my $robotNumber (@ARGV) {
+    my $robot = NBU::Robot->byID($robotNumber);
+    push @list, $robot if (defined($robot));
+  }
+}
+else {
+  @list = (NBU::Robot->farm);
+}
+
+for my $robot (@list) {
 
   next unless defined($robot);
 
@@ -37,7 +49,14 @@ for my $robot (NBU::Robot->farm) {
 
   my $prefix;
   if ($opts{'h'}) {
-    print "Robot number $r on ".$robot->host->name."\n";
+    print "Robot number $r";
+    if (defined($robot->host)) {
+      print " on ".$robot->host->name
+    }
+    else {
+      print " cannot be located!";
+    }
+    print "\n";
     $prefix = "   ";
   }
   else {
@@ -51,7 +70,7 @@ for my $robot (NBU::Robot->farm) {
   my %emptyCount;  my %fullCount;
   my %frozenCount;
 
-  my $oldest;
+  my $firstExpiration;
   for my $position (1..$robot->capacity) {
     $position = sprintf("%03d", $position);
     my $slot;
@@ -74,13 +93,13 @@ for my $robot (NBU::Robot->farm) {
 	    if ($volume->full) {
               $slot .= " FULL";
               $fullCount{$volume->pool->name} += 1;
+	      if (!defined($firstExpiration) || ($volume->expires < $firstExpiration->expires)) {
+		$firstExpiration = $volume;
+	      }
 	    }
 	    if ($volume->frozen) {
               $slot .= " FROZEN";
               $frozenCount{$volume->pool->name} += 1;
-	    }
-	    if (!defined($oldest) || ($volume->allocated < $oldest->allocated)) {
-	      $oldest = $volume;
 	    }
             if ($volume->expires < time) {
               $slot .= " EXPIRED";
@@ -115,18 +134,29 @@ for my $robot (NBU::Robot->farm) {
   my $emptyCount = 0;
   my $fullCount = 0;
 
-  my $robotConfig = $config ? $$config{robot}->{$r} : undef;
+  my $nodeset = $xp->find('//robot[@id=\''.$r.'\']');
+  my $robotConfig = ($nodeset->size == 1) ? $nodeset->pop : undef;
 
-  if (my $constraint = $robotConfig->{netbackup}) {
-    my $target = $$constraint[0]->{total};
-    if ((my $n = ($target - $netbackupCount)) > 0) {
-      print "${prefix}  Add $n NetBackup volumes\n";
+  if (defined($robotConfig)) {
+    $nodeset = $robotConfig->find('pool[@id=\'NetBackup\']');
+    if ($nodeset->size == 1) {
+      my $constraint = $nodeset->pop;
+      my $target = $constraint->getAttribute('total');
+      if ((my $n = ($target - $netbackupCount)) > 0) {
+	print "${prefix}  Add $n NetBackup volumes\n";
+      }
     }
   }
 
-  my $levels = $robotConfig->{pool};
   foreach my $pool (keys %poolCount) {
-    my $poolSpecs = $levels ? $$levels{$pool} : undef;
+    my $poolSpecs;
+
+    if (defined($robotConfig)) {
+      $nodeset = $robotConfig->find('pool[@id=\''.$pool.'\']');
+      if ($nodeset->size == 1) {
+	$poolSpecs = $nodeset->pop;
+      }
+    }
 
     my $total = sprintf("%3u", $poolCount{$pool});
     my $empty = $emptyCount{$pool} += 0;
@@ -134,25 +164,25 @@ for my $robot (NBU::Robot->farm) {
     my $partial = $total - $full - $empty;
     my $frozen = $frozenCount{$pool} += 0;
 
-    if ($poolSpecs) {
+    if (defined($poolSpecs)) {
 
       print "${prefix}$total $pool\: $empty/$partial/$full\n";
 
-      if (defined(my $limit = $$poolSpecs{'frozen'})) {
-	if ($frozen > $limit) {
-	  my $count = $frozen - $limit;
+      if ((my $limit = $poolSpecs->find('frozen | ancestor::*/frozen'))->size > 0) {
+	if ($frozen > (my $value = $limit->pop->string_value)) {
+	  my $count = $frozen - $value;
 	  print "${prefix}     Remove $count frozen $pool volumes\n";
 	}
       }
-      if (defined(my $limit = $$poolSpecs{'full'})) {
-	if ($full > $limit) {
-	  my $count = $full - $limit;
+      if ((my $limit = $poolSpecs->find('full'))->size == 1) {
+	if ($full > (my $value = $limit->pop->string_value)) {
+	  my $count = $full - $value;
 	  print "${prefix}     Remove $count full $pool volumes\n";
 	}
       }
-      if (defined(my $limit = $$poolSpecs{'empty'})) {
-	if ($empty < $limit) {
-	  my $count = $limit - $empty;
+      if ((my $limit = $poolSpecs->find('empty'))->size == 1) {
+	if ($empty < (my $value = $limit->pop->string_value)) {
+	  my $count = $value - $empty;
 	  print "${prefix}     Add $count empty $pool volumes\n";
 	}
       }
@@ -160,7 +190,7 @@ for my $robot (NBU::Robot->farm) {
       $emptyCount += $empty;
       $fullCount += $full;
     }
-    elsif ($levels) {
+    elsif (defined($robotConfig)) {
       my $count = $total - 0;
       print "${prefix}$total $pool\n";
       print "${prefix}     Remove $count disallowed $pool volumes\n";
@@ -177,6 +207,34 @@ for my $robot (NBU::Robot->farm) {
     print "${prefix}$cleanings cleanings left on $cleanCount cleaning volumes\n";
   }
   if ($opts{'o'}) {
-    print "${prefix}Oldest volume is ".$oldest->id." expiring on ".localtime($oldest->expires)."\n";
+    print "${prefix}Oldest full volume is ".$firstExpiration->id." expiring on ".localtime($firstExpiration->expires)."\n";
   }
 }
+
+=head1 NAME
+
+robot-snapshot.pl - Report and Analyze Tape Robot Contents
+
+=head1 SYNOPSIS
+
+robot-snapshot.pl
+
+=head1 DESCRIPTION
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<volume-list.pl|volume-list.pl>, L<volume-status.pl|volume-status.pl>, L<scratch.pl|scratch.pl>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

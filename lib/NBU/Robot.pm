@@ -13,7 +13,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw(%robotLevel);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.17 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%robotLevel);
   @EXPORT_OK =   qw();
@@ -39,6 +39,8 @@ my %robotTypes = (
   0 => '-',
 );
 
+#
+# new(robot-number, robot-type [, robot-host-name])
 sub new {
   my $Class = shift;
   my $robot = {};
@@ -55,11 +57,9 @@ sub new {
       else {
 	$type = $robotTypes{$type};
       }
-      $robot->{TYPE} = $robotTypes{$type};
     }
     else {
       return undef if ($type eq "-");
-      $robot->{TYPE} = $type;
     }
 
     if ($farm[$id]) {
@@ -75,10 +75,7 @@ sub new {
       $robot->{SLOTS} = {};
       $robot->{DRIVES} = [];
       $robot->{KNOWNTO} = [];
-    }
-
-    if (defined(my $hostName = shift)) {
-      $robot->{CONTROLHOST} = NBU::Host->new($hostName);
+      $robot->{TYPE} = $type;
     }
   }
 
@@ -93,60 +90,65 @@ sub populate {
   my $type = $self->type;
   $type =~ tr/A-Z/a-z/;
 
-  my $pipe = NBU->cmd("vmcheckxxx ".
-	" -rt $type".
-	" -rn ".$self->id.
-	" -rh ".$self->host->name.
-	" -list |");
-
-  if ($self->host->NBUVersion eq "3.2.0") {
-    while (<$pipe>) {
-      if (/^Slot = [\s]*([\d]+), Barcode = ([\S]+)$/) {
-	if (defined(my $volume = NBU::Media->byBarcode($2))) {
-	  $self->insert($1, $volume);
-	}
-	else {
-	  print STDERR "Unknown barcode $2 in slot $1 of robot ".$self->id."\n";
-	  $self->empty($1);
-	}
-	$lastSlot = $1;
-      }
-      elsif (/^Slot = [\s]*([\d]+), <EMPTY>/) {
-	$self->empty($1);
-	$lastSlot = $1;
-      }
-      else {
-        print STDERR "Ignoring $_";
-      }
-    }
-  }
-  elsif (($self->host->NBUVersion eq "3.4.0") || ($self->host->NBUVersion eq "4.5.0")) {
-    while (<$pipe>) {
-      last if (/^===/);
-    }
-    while (<$pipe>) {
-      if (/^[\s]*([\d]+)[\s]+[\S]+[\s]+([\S]+)/) {
-	if (defined(my $volume = NBU::Media->byBarcode($2))) {
-	  $self->insert($1, $volume);
-	}
-	else {
-	  print STDERR "Unknown barcode $2 in slot $1 of robot ".$self->id."\n";
-	  $self->empty($1);
-	}
-	$lastSlot = $1;
-      }
-      elsif (/^[\s]*([\d]+)[\s]+No/) {
-	$self->empty($1);
-	$lastSlot = $1;
-      }
-      else {
-        print STDERR "Ignoring $_";
-      }
-    }
+  if (!defined($self->host)) {
+    $lastSlot = 0;
   }
   else {
-    print STDERR "Unknown NetBackup version \"".$self->host->NBUVersion."\"\n";
-    $lastSlot = 0;
+    my $pipe = NBU->cmd("vmcheckxxx ".
+	  " -rt $type".
+	  " -rn ".$self->id.
+	  " -rh ".$self->host->name.
+	  " -list |");
+
+    if ($self->host->NBUVersion eq "3.2.0") {
+      while (<$pipe>) {
+	if (/^Slot = [\s]*([\d]+), Barcode = ([\S]+)$/) {
+	  if (defined(my $volume = NBU::Media->byBarcode($2))) {
+	    $self->insert($1, $volume);
+	  }
+	  else {
+	    print STDERR "Unknown barcode $2 in slot $1 of robot ".$self->id."\n";
+	    $self->empty($1);
+	  }
+	  $lastSlot = $1;
+	}
+	elsif (/^Slot = [\s]*([\d]+), <EMPTY>/) {
+	  $self->empty($1);
+	  $lastSlot = $1;
+	}
+	else {
+	  print STDERR "Ignoring $_";
+	}
+      }
+    }
+    elsif (($self->host->NBUVersion eq "3.4.0") || ($self->host->NBUVersion eq "4.5.0")) {
+      while (<$pipe>) {
+	last if (/^===/);
+      }
+      while (<$pipe>) {
+	if (/^[\s]*([\d]+)[\s]+[\S]+[\s]+([\S]+)/) {
+	  if (defined(my $volume = NBU::Media->byBarcode($2))) {
+	    $self->insert($1, $volume);
+	  }
+	  else {
+	    print STDERR "Unknown barcode $2 in slot $1 of robot ".$self->id."\n";
+	    $self->empty($1);
+	  }
+	  $lastSlot = $1;
+	}
+	elsif (/^[\s]*([\d]+)[\s]+No/) {
+	  $self->empty($1);
+	  $lastSlot = $1;
+	}
+	else {
+	  print STDERR "Ignoring $_";
+	}
+      }
+    }
+    else {
+      print STDERR "Unknown NetBackup version \"".$self->host->NBUVersion."\"\n";
+      $lastSlot = 0;
+    }
   }
 
   $self->{CAPACITY} = $lastSlot;
@@ -168,13 +170,31 @@ sub id {
 sub type {
   my $self = shift;
 
+  $self->loadRobotDetail if (!defined($self->{DETAILED}));
+  if (@_) {
+    $self->{TYPE} = shift;
+  }
   return $self->{TYPE};
 }
 
 sub host {
   my $self = shift;
 
+  $self->loadRobotDetail if (!defined($self->{DETAILED}));
+  if (@_) {
+    $self->{CONTROLHOST} = shift;
+  }
   return $self->{CONTROLHOST};
+}
+
+sub voldbHost {
+  my $self = shift;
+
+  $self->loadRobotDetail if (!defined($self->{DETAILED}));
+  if (@_) {
+    $self->{VOLDBHOST} = shift;
+  }
+  return $self->{VOLDBHOST};
 }
 
 sub controlDrive {
@@ -314,9 +334,45 @@ sub updateInventory {
 	.((defined($importCAP) && $importCAP) ? " -empty_ie" : "")
 	, 0);
 
-  $self->populate();
+  $self->populate;
 }
 
 1;
+
+#
+# Try to get more detail on this robot.
+# If the host to query is not specified, first look to the robot's
+# host or else the local master server for this information
+sub loadRobotDetail {
+  my $self = shift;
+  my $server = shift;
+
+  if (!defined($server)) {
+    my @masters = NBU->masters;  $server = $masters[0];
+  }
+
+  my $pipe = NBU->cmd("vmglob -h ".$server->name." -listall -java |");
+  while (<$pipe>) {
+    next unless (/VMGLOB... robot /);
+    chop;
+
+    my($key, $d, $number, $serial, $host, $voldbHostName, $robotNumber, $na1, $type, $na2, $flags,
+       $wwName, $wwNameType, $inquiry, $libraryName, $vendorName, $controlHostName) =
+      split;
+
+    # Any media server with drives controlled by this robot will generate an entry for this robot
+    # However, we only care about the entry from the host which is the controlling host.
+    next unless ($controlHostName ne "-");
+
+    if (my $robot = NBU::Robot->byID($robotNumber)) {
+      $robot->{SERIALNUMBER} = $serial;
+      $robot->{VOLDBHOST} = NBU::Host->new($voldbHostName);
+      $robot->{CONTROLHOST} = NBU::Host->new($controlHostName);
+
+      $robot->{DETAILED} = 1;
+    }
+  }
+  $self->{DETAILED} = 1;
+}
 
 __END__

@@ -1,3 +1,13 @@
+For release 0.86
+Lots of work regarding volumes and their existence in media manager or volume
+databases.
+- Figured out, I think, bit 0x10 of the media status field
+- Deal with multiple volume databases and thus volume-ds that could exist
+  more than once.  That is, complain and ignore the second definition.
+- Licensing handles re-using the same key on more than one host (naughty,
+  naughty!)
+- Add jobtype "Import"
+and lots more...
 For release 0.85
 Some minor fixes and updates for NBU 4.5 compatibility
 - Handle multiplexed fragments when computing a volume's TOC

@@ -18,12 +18,14 @@ use Curses;
 my $program = $0;  $program =~ s /^.*\/([^\/]+)$/$1/;
 
 my %opts;
-getopts('vldrs:p:M:', \%opts);
+getopts('ivldrs:p:M:', \%opts);
 
 my $interval = 60;
 if (defined($opts{'s'})) {
   $interval = $opts{'s'};
 }
+
+my $instant = $opts{'i'};
 
 my $passLimit = $opts{'p'};
 my $refreshCounter = 0;
@@ -72,11 +74,12 @@ sub sortByVolume {
 }
 sub sortByThroughput {
 
-  return 1 if (!defined($a->dataWritten) || !$a->elapsedTime);
-  return -1 if (!defined($b->dataWritten) || !$b->elapsedTime);
+  my $aSpeed = $instant ? $a->ispeed : $a->speed;
+  my $bSpeed = $instant ? $b->ispeed : $b->speed;
 
-  my $aSpeed = $a->dataWritten/$a->elapsedTime;
-  my $bSpeed = $b->dataWritten/$b->elapsedTime;
+  return 1 if (!defined($aSpeed));
+  return -1 if (!defined($bSpeed));
+
 
   return ($aSpeed <=> $bSpeed);
 }
@@ -148,21 +151,31 @@ sub menu {
       $sortColumn = "SPD";
     }
   }
-  elsif ($answer eq "s") {
+  elsif ($answer eq 's') {
     $win->addstr(2, 0, "Seconds to delay between refresh:");
     echo();  $win->getstr(2, 34, $answer);  noecho();
     if ($answer =~ /^[\d]+$/) {
       $interval = $answer;
     }
   }
-  elsif ($answer eq "d") {
+  elsif ($answer eq 'd') {
     $win->addstr(2, 0, "Number of display passes:");
     echo();  $win->getstr(2, 26, $answer);  noecho();
     if ($answer =~ /^[\d]+$/) {
       $passLimit = $refreshCounter + $answer;
     }
   }
-  elsif (($answer eq "?") || ($answer eq 'h')) {
+  if ($answer eq 't') {
+    $win->addstr(2, 0, "Measure speed: (c)umulative (i)nstantaneously?");
+    my $t = $win->getch();
+    if ($t eq 'i') {
+      $instant = 1;
+    }
+    elsif ($t eq 'c') {
+      $instant = 0;
+    }
+  }
+  elsif (($answer eq '?') || ($answer eq 'h')) {
     my $lines = $LINES-10;  my $cols = $COLS-10;
     my $help = $win->subwin($lines, $cols, 5, 5);
     $help->clear();  $help->box('|', '-');
@@ -181,6 +194,8 @@ sub menu {
       $help->addstr($r, 9, "- specify sort order");
     $help->addstr($r+=1, 2, "r");
       $help->addstr($r, 9, "- force a refresh");
+    $help->addstr($r+=1, 2, "t");
+      $help->addstr($r, 9, "- throughput calculation method");
     $help->addstr($r+=1, 2, "q");
       $help->addstr($r, 9, "- quit");
 
@@ -241,9 +256,9 @@ $hdr .= " ".sprintf("%8s", "  START ");
 $hdr .= " ".sprintf("%3s", "OP ");
 $hdr .= " ".sprintf("%6s", "VOLUME");
 $hdr .= " ".sprintf("%6s", " SIZE ");
-$hdr .= " ".sprintf("%4s", "SPD ");
+$hdr .= " ".sprintf("%4s", " SPD ");
 if ($opts{'r'}) {
-  $hdr .= " ".sprintf("%8s", "  STU");
+  $hdr .= " ".sprintf("%10s", "  STU  ");
 }
 else {
   $hdr .= " ".sprintf("%11s", "   DRIVE");
@@ -291,10 +306,17 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
     if (defined($job->volume)) {
       $jobDescription .= " ".$job->volume->id;
       $jobDescription .= " ".sprintf("%6d", int($job->dataWritten/1024));
-      $jobDescription .= " ".sprintf("%.2f", $speed = ($job->dataWritten / $job->elapsedTime / 1024))
-	if ($job->elapsedTime);
+      if (defined($speed = ($instant ? $job->ispeed : $job->speed))) {
+	$speed /= 1024;
+        $jobDescription .= " ".sprintf("%5.2f", $speed)
+	  if ($job->elapsedTime);
+      }
+      else {
+        $jobDescription .= " --.--";
+      }
+      
 
-      $jobDescription .= " ".sprintf("%8s", defined($job->storageUnit) ? $job->storageUnit->label : "");
+      $jobDescription .= " ".sprintf("%10s", defined($job->storageUnit) ? $job->storageUnit->label : "");
 
       if (!$opts{'r'}) {
 	if ($job->volume->drive) {
@@ -302,6 +324,10 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 	}
       }
     }
+
+    #
+    # Alert viewer to certain jobs based on configuration data from
+    # job-alert.xml in /usr/local/etc
     my $alert = 0;
     if (defined($speed)) {
 
@@ -334,7 +360,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 
   $totalSpeed = sprintf("%.2f", $totalSpeed);
   $totalWireSpeed = sprintf("%.2f", $totalWireSpeed);
-  $win->addstr(1, 0, "Throughput ${totalSpeed}Mb/s; Network load ${totalWireSpeed}Mb/s");
+  $win->addstr(1, 0, ($instant ? "Instantaneous" : "Cumulative")." throughput ${totalSpeed}Mb/s; Network load ${totalWireSpeed}Mb/s");
 
   $win->refresh;
 
@@ -352,8 +378,8 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 
   last if ($answer eq 'q');
 
-  if ($answer eq 'c') {
-    # Choose which job to cancel
+  if ($answer eq 'k') {
+    # Choose which job to kill
   }
   elsif ($answer ne 'r') {
     $answer = menu($answer, $win);

@@ -6,6 +6,8 @@ different than any the author saw at the time in that it is truly an object-
 oriented approach to the problem of asking questions of a NetBackup setup.  Thus
 you will find Perl modules corresponding to each of the major concepts in
 NetBackup:
+	NBU::Job.pm
+
 	NBU::Pool
 	NBU::Media
 	NBU::Image
@@ -19,6 +21,8 @@ NetBackup:
 	NBU::Drive
 
 	NBU::Host
+
+	NBU::Image
 and a over-arching class simply called NBU to help hide local environmental
 matters as much as possible, allowing you to write your scripts in as neutral
 a way as possible.
