@@ -43,4 +43,5 @@ bin/coverage.pl
 bin/toc.pl
 bin/class-list.pl
 bin/vu.pl
+bin/sla.pl
 conf/robot-conf.xml
