@@ -21,9 +21,10 @@ foreach my $fragment ($m->tableOfContents) {
 
   my $image = $fragment->image;
   print "Fragment ".$fragment->number." of ".$image->class->name." from ".$image->client->name.": ";
+  print "Created ".substr(localtime($image->ctime), 4)."; ";
   print "Expires ".substr(localtime($image->expires), 4)."\n";
   if ($opts{'R'}) {
-    for my $f ($image->fileList) {
+    for my $f (sort ($image->fileList)) {
       print "      $f\n";
     }
   }

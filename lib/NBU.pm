@@ -32,7 +32,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -97,7 +97,7 @@ else {
 
 my $debug = undef;
 sub debug {
-  my $Class = shift;
+  my $proto = shift;
   
   if (@_) {
     $debug = shift;
@@ -107,6 +107,7 @@ sub debug {
 
 my %cmdList = (
   bpclntcmd => $sudo."${NBdir}${PS}bin${PS}bpclntcmd",
+  bpconfig => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpconfig",
   bpgetconfig => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpgetconfig",
   bpcllist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpcllist",
   bpclclients => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpclclients",
@@ -131,7 +132,7 @@ my %cmdList = (
 
 my $pipeNames = "PIPE00";
 sub cmd {
-  my $Class = shift;
+  my $proto = shift;
   my $cmdline = shift;
   my $biDirectional;
 
@@ -177,6 +178,7 @@ sub cmd {
 }
 
 my ($me, $master, @servers);
+my $adminAddress;
 sub loadClusterInformation {
 
   my $myName = "localhost";
@@ -208,66 +210,69 @@ sub loadClusterInformation {
   while (<$pipe>) {
     if (/SERVER = ([\S]+)/) {
       my $serverName = $1;
-
-      # This bit of ugly code removes duplicate servers
-      # from the list.  Duplicate in the sense that
-      # servers <host> and <host>.bkup are really the
-      # same machine and should NOT both appear in the list!
-      my @canonicalServers;
-      foreach my $host (@servers) {
-	my $hostName = $host->name;
-	if ($hostName =~ /${serverName}.bkup/) {
-	  $serverName = undef;
-	  push @canonicalServers, $host;
-	}
-	elsif ($serverName =~ /${hostName}.bkup/) {
-	}
-	else {
-	  push @canonicalServers, $host;
-	}
-      }
-      @servers = @canonicalServers;
-      if (defined($serverName)) {
-	my $server = NBU::Host->new($serverName);
-	push @servers, $server
-      }
+      my $server = NBU::Host->new($serverName);
+      push @servers, $server;
     }
   }
   close($pipe);
+
+  $pipe = NBU->cmd("bpconfig -M ".$master->name." -l |");
+  $_ = <$pipe>;
+  my (
+    $email, $wakeupInterval,
+    $retryPeriod,
+    $maxClientJobs,
+    $retryCount,
+    $logFileRetentionPeriod,
+    $u1, $u2, $u3, $u4,
+    $immediatePostProcess,
+    $reportDisplayWindow,
+    $TIRRetentionPeriod,
+    $prepInterval
+  ) = split;
+  $email = undef if ($email eq "*NULL*");
+  $adminAddress = $email;
 }
 
 sub masters {
-  my $Class = shift;
+  my $proto = shift;
 
   loadClusterInformation() if (!defined($me));
   return ($master);
 }
 
 sub master {
-  my $Class = shift;
+  my $proto = shift;
 
   loadClusterInformation() if (!defined($me));
   return ($master == $me);
 }
 
 sub me {
-  my $Class = shift;
+  my $proto = shift;
 
   loadClusterInformation() if (!defined($me));
   return $me;
 }
 
 sub servers {
-  my $Class = shift;
+  my $proto = shift;
 
   loadClusterInformation() if (!defined($me));
   return @servers;
 }
 
+sub adminAddress {
+  my $proto = shift;
+
+  loadClusterInformation() if (!defined($me));
+  return $adminAddress;
+}
+
 my $msgsLoaded;
 my %msgs;
 sub loadErrorMessages {
-  my $Class = shift;
+  my $proto = shift;
 
   $msgsLoaded = 0;
   my $pipe = NBU->cmd("bperrcode  |");
@@ -281,7 +286,7 @@ sub loadErrorMessages {
 }
 
 sub errorMessage {
-  my $Class = shift;
+  my $proto = shift;
 
   NBU->loadErrorMessages if (!defined($msgsLoaded));
 
@@ -291,3 +296,49 @@ sub errorMessage {
 1;
 
 __END__
+
+=head1 NAME
+
+NBU - Main entry point for NetBackup OO Modules
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides generic support for the entire collection of NBU::* modules.  Not
+only does it ensure that all other modules are properly "use"d but it also provides several
+methods to these other modules to hide the details of the NetBackup environment.
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

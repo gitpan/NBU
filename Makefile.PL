@@ -3,7 +3,14 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.73',
+            'VERSION'         => '0.74',
+
+            'EXE_FILES'       => [
+               'bin/nbutop.pl',
+               'bin/history.pl',
+               'bin/robot-snapshot.pl',
+               'bin/drive-watch.pl',
+            ],
             
             dist              => {
               DIST_DEFAULT => 'all tardist',

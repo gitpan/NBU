@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.6 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.7 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -20,15 +20,16 @@ BEGIN {
 }
 
 sub new {
-  my $class = shift;
+  my $Class = shift;
   my $Schedule = {
   };
 
-  bless $Schedule, $class;
+  bless $Schedule, $Class;
 
   if (@_) {
-    my $name = $Schedule->{NAME} = shift;
     $Schedule->{CLASS} = shift;
+    $Schedule->{NAME} = shift;
+    $Schedule->{TYPE} = shift;
   }
   return $Schedule;
 }

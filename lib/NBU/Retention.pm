@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.2 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -23,20 +23,20 @@ my $retained;
 my %retentionLevels;
 
 sub new {
-  my $Class = shift;
-  my $Retention = {
+  my $proto = shift;
+  my $retention = {
   };
 
-  bless $Retention, $Class;
+  bless $retention, $proto;
 
   if (@_) {
-    my $level = $Retention->{LEVEL} = shift;
-    $Retention->{PERIOD} = shift;
-    $Retention->{DESCRIPTION} = shift;
+    my $level = $retention->{LEVEL} = shift;
+    $retention->{PERIOD} = shift;
+    $retention->{DESCRIPTION} = shift;
 
-    $retentionLevels{$level} = $Retention;
+    $retentionLevels{$level} = $retention;
   }
-  return $Retention;
+  return $retention;
 }
 
 sub populate {
@@ -47,6 +47,7 @@ sub populate {
   die "Could not open retention pipe\n"
     unless my $pipe = NBU->cmd("bpretlevel -M ".$master->name." -l |");
   while (<$pipe>) {
+    chop;
     my ($level, $period, $description) = split(/[\s]+/, $_, 3);
     $Class->new($level, $period, $description);
     chop;
@@ -73,6 +74,12 @@ sub level {
   my $self = shift;
 
   return $self->{LEVEL};
+}
+
+sub description {
+  my $self = shift;
+
+  return $self->{DESCRIPTION};
 }
 
 sub list {

@@ -18,4 +18,6 @@ print "Where";
 for my $s (NBU->masters) {
   print " ".$s->name;
 }
-print " acts as master\n";
+print " acts as master and job notifications are ";
+print !defined(NBU->adminAddress) ? "not sent out" : "sent to ".NBU->adminAddress;
+print "\n";

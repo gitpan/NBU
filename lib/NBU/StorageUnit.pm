@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.9 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.11 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -31,15 +31,15 @@ my %types = (
 );
 
 sub new {
-  my $Class = shift;
+  my $proto = shift;
   my $stu = {};
 
-  bless $stu, $Class;
+  bless $stu, $proto;
 
   if (@_) {
     $stu->{LABEL} = shift;
     my $type;
-    if (exists($types{$type = shift})) {
+    if (@_ && exists($types{$type = shift})) {
       $stu->{TYPE} = $types{$type};
     }
     else {
@@ -52,7 +52,7 @@ sub new {
 }
 
 sub populate {
-  my $Class = shift;
+  my $proto = shift;
 
   $populated = 0;
   my $pipe = NBU->cmd("bpstulist |");
@@ -60,8 +60,11 @@ sub populate {
     my ($label, $type, $hostName,
 	$robotType, $robotNumber, $density,
 	$numberOfDrives,
-	$maxFragmentSize, , $onDemandOnly,
-	$maxMPXperDrive) = split;
+	$initialMPX,
+	$path,
+	$maxFragmentSize, $onDemandOnly, $maxMPXperDrive,
+	$ndmpAttachHostName,
+    ) = split;
 
     my $stu;
     if (!defined($stu = NBU::StorageUnit->byLabel($label))) {
@@ -82,17 +85,20 @@ sub populate {
 }
 
 sub list {
-  my $Class = shift;
+  my $proto = shift;
 
   return (values %stuList);
 }
 
 sub byLabel {
-  my $Class = shift;
+  my $proto = shift;
   my $label = shift;
 
-  $Class->populate if (!defined($populated));
+  $proto->populate if (!defined($populated));
 
+  if (!exists($stuList{$label})) {
+    return $proto->new($label);
+  }
   return $stuList{$label};
 }
 

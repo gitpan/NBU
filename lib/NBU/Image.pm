@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.16 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -22,7 +22,7 @@ BEGIN {
 }
 
 sub new {
-  my $Class = shift;
+  my $proto = shift;
   my $image;
 
   if (@_) {
@@ -32,15 +32,21 @@ sub new {
     }
     else {
       $image = { };
-      bless $image, $Class;
-      $image->id($backupID);
+      bless $image, $proto;
+      $imageList{$image->id($backupID)} = $image;
     }
   }
   return $image;
 }
 
+sub populate {
+  my $proto = shift;
+
+  $proto->loadImages(NBU->cmd("bpimmedia -l |"));
+}
+
 sub byID {
-  my $Class = shift;
+  my $proto = shift;
   my $backupID = shift;
 
   if (exists($imageList{$backupID})) {
@@ -48,6 +54,12 @@ sub byID {
   }
 
   return undef;
+}
+
+sub list {
+  my $proto = shift;
+
+  return (values %imageList);
 }
 
 sub id {
@@ -114,6 +126,16 @@ sub expires {
   return $self->{EXPIRES};
 }
 
+sub retention {
+  my $self = shift;
+
+  if (@_) {
+    $self->{RETENTION} = shift;
+  }
+  return $self->{RETENTION};
+}
+
+
 sub size {
   my $self = shift;
   my $size;
@@ -160,7 +182,7 @@ sub fragments {
 }
 
 sub loadImages {
-  my $Class = shift;
+  my $proto = shift;
   my $pipe = shift;
 
   my $image;
@@ -178,10 +200,14 @@ sub loadImages {
       next if ($expires < time);
 
       $image = NBU::Image->new($backupID);
-      $image->expires($expires);
+      $image->{ENCRYPTED} = $encrypted;
+      $image->{COMPRESSED} = $compressed;
+      $image->{FILECOUNT} = $fileCount;
+      $image->{EXPIRES} = $expires;
+      $image->{RETENTION} = NBU::Retention->byLevel($retentionLevel);
 
-      $image->class(NBU::Class->new($className));
-      $image->schedule(NBU::Schedule->new($scheduleName, $scheduleType));
+      my $class = $image->class(NBU::Class->new($className));
+      $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
 
       my $host;
       $image->client($host = NBU::Host->new($clientName));

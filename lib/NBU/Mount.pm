@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.7 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.8 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -29,13 +29,13 @@ sub new {
   bless $mount, $class;
 
   if (@_) {
-    my ($job, $volume, $driveIndex, $tm) = @_;
+    my ($job, $volume, $drive, $tm) = @_;
 
     #
-    # The only way a call to drive byID fails is if the incoming driveIndex
-    # is undefined.  The bpdbjobs output, for example, is devoid of drive
-    # references...
-    if (my $drive = NBU::Drive->byID($driveIndex)) {
+    # The bpdbjobs output, for example, is devoid of drive
+    # references hence we may not be able to record an actual
+    # mount event at this time...
+    if (defined($drive)) {
       $mount->drive($drive)->use($mount, $tm);
       $volume->mount($mount, $drive, $tm);
     }

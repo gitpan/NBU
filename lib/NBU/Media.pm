@@ -15,7 +15,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -703,10 +703,23 @@ sub suspended {
   return $self->{STATUS} & 0x2;
 }
 
+#
+# Return true, that is a non-zero value, if the tape is indeed full.
 sub full {
   my $self = shift;
 
-  return $self->{STATUS} & 0x8;
+  return ($self->{STATUS} & 0x8);
+}
+
+#
+# The particular value returned is the number of seconds elapsed since
+# the tape was taken into service (ALLOCATED) and when it was last written.
+# Think of this as the volume's retirement age :-)
+# Note that this value can in fact be zero even if the tape is full.
+sub fillTime {
+  my $self = shift;
+
+  return $self->full ? ($self->{LASTWRITTEN} - $self->{ALLOCATED}) : undef;
 }
 
 sub eject {

@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.19 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.25 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -131,6 +131,14 @@ sub parseJob {
   chop $jobDescription;
 
   #
+  # Just after midnight, a "refresh" request on active bpdbjobs connection will result in
+  # aging out a number of jobs.  This is communicated by sending the jobid's preceded by a minus
+  # sign.  Such events are ignored here:
+  if ($jobDescription =~ /^\-/) {
+    return;
+  }
+
+  #
   # Occasionally some well-meaning but severely misguided soul decides that
   # the occasional comma inserted in the midst of an error message is a bad
   # thing indeed (which it is) so it was decided to quote that comma with a
@@ -139,8 +147,8 @@ sub parseJob {
   $jobDescription =~ s/([^\\])\\,/${1}-/;
 
   my (
-    $jobID, $jobType, $state, $status, $className, $scheduleName, $client,
-    $server, $started, $elapsed, $ended, $stUnit, $currentTry, $operation,
+    $jobID, $jobType, $state, $status, $className, $scheduleName, $clientName,
+    $serverName, $started, $elapsed, $ended, $stUnit, $currentTry, $operation,
     $KBytesWritten, $filesWritten, $currentFile, $percent,
     # This is the PID of the bpsched process on the master
     $jobPID,
@@ -159,17 +167,18 @@ sub parseJob {
     $job = NBU::Job->new($jobPID);
     $job->id($jobID);
 
+    $job->mediaServer(NBU::Host->new($serverName));
 
     $job->start($started);
 
     $job->type($jobTypes[$jobType]);
 
     $job->storageUnit(NBU::StorageUnit->byLabel($stUnit));
-    my $backupID = $client."_".$started;
+    my $backupID = $clientName."_".$started;
     my $image = $job->image($backupID);
-    my $class = $image->class(NBU::Class->new($className));
-    $image->schedule(NBU::Schedule->new($scheduleName, $class));
-    $image->client(NBU::Host->new($client));
+    my $class = $image->class(NBU::Class->new($className, $classType));
+    $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
+    $image->client(NBU::Host->new($clientName));
   }
   $job->state($state);
   $job->try($currentTry);
@@ -184,6 +193,7 @@ sub parseJob {
       push @paths, $p;
     }
   }
+  $job->{FILES} = \@paths;
 
   #
   # March through the list of tries and for each of them, extract the progress
@@ -217,13 +227,15 @@ sub parseJob {
 	elsif ($msg =~ /connected/) {
 	  $job->connected($now);
 	}
+	elsif ($msg =~ /^using ([\S]+)/) {
+	}
 	elsif ($msg =~ /^mounting ([\S]+)/) {
 	  my $volume = NBU::Media->byID($1);
-	  $job->startMounting($volume, $now);
+	  $job->startMounting($now, $volume);
 	}
 	elsif ($msg =~ /mounted/) {
 	  # unfortunately this data stream does not tell us which drive :-(
-	  $job->mounted(undef, $now);
+	  $job->mounted($now);
 	}
 	elsif ($msg =~ /positioning/) {
 	  my $fileNumber;
@@ -330,6 +342,15 @@ sub id {
     $jobs{$self->{ID} = shift} = $self;
   }
   return $self->{ID};
+}
+
+sub mediaServer {
+  my $self = shift;
+
+  if (@_) {
+    $self->{MEDIASERVER} = shift;
+  }
+  return $self->{MEDIASERVER};
 }
 
 #
@@ -493,8 +514,8 @@ sub connected {
 
 sub startMounting {
   my $self = shift;
-  my $volume = shift;
   my $tm = shift;
+  my $volume = shift;
 
   $self->pushState('MNT', $tm);
 
@@ -506,14 +527,14 @@ sub startMounting {
 
 sub mounted {
   my $self = shift;
-  my $driveIndex = shift;
   my $tm = shift;
+  my $drive = shift;
 
   $self->popState($tm);
 
   my $volume = $self->{SELECTED};
 
-  my $mount = NBU::Mount->new($self, $volume, $driveIndex, $tm);
+  my $mount = NBU::Mount->new($self, $volume, $drive, $tm);
 
   my $mountListR = $self->{MOUNTLIST};
   $$mountListR{$tm} = $mount;
@@ -600,6 +621,17 @@ print STDERR "Job ".$self->id." has no start op?\n";
   }
   else  {
     return $asOf - $self->{STARTOP};
+  }
+}
+
+sub files {
+  my $self = shift;
+
+  if (defined(my $fileListR = $self->{FILES})) {
+    return@$fileListR;
+  }
+  else {
+    return ();
   }
 }
 

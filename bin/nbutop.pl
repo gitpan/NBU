@@ -16,13 +16,18 @@ use Time::Local;
 # Download this one from CPAN
 use Curses;
 
+my $program = $0;  $program =~ s /^.*\/([^\/]+)$/$1/;
+
 my %opts;
-getopts('sldri:', \%opts);
+getopts('vldrs:p:', \%opts);
 
 my $interval = 60;
-if (defined($opts{'i'})) {
-  $interval = $opts{'i'};
+if (defined($opts{'s'})) {
+  $interval = $opts{'s'};
 }
+
+my $passLimit = $opts{'p'};
+my $refreshCounter = 0;
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -75,6 +80,14 @@ sub sortBySize {
 
   return ($bSize <=> $aSize);
 }
+sub sortByMediaServer {
+
+  return ($a->mediaServer->name cmp $b->mediaServer->name);
+}
+sub sortByStorageUnit {
+
+  return ($a->storageUnit->label cmp $b->storageUnit->label);
+}
 sub sortByClient {
 
   return ($a->client->name cmp $b->client->name);
@@ -86,42 +99,91 @@ sub sortByID {
   return $result;
 }
 my $sortOrder = \&sortByID;
+my $sortColumn = "JOBID";
 
 sub menu {
   my $answer = shift;
   my $win = shift;
 
   if ($answer eq 'o') {
-    $win->addstr(2, 0, "Order by: (v)olume (d)rive (s)ize (t)hroughput (i)d (c)lient?");
+    $win->addstr(2, 0, "Order by: (v)olume (d)rive (s)ize (t)hroughput (i)d (c)lient (m)ediaserver?");
     my $o = $win->getch();
     if ($o eq 'd') {
       $sortOrder = \&sortByDrive;
+      $sortColumn = "DRIVE";
     }
     elsif ($o eq 'v') {
       $sortOrder = \&sortByVolume;
+      $sortColumn = "VOLUME";
     }
     elsif ($o eq 'i') {
       $sortOrder = \&sortByID;
+      $sortColumn = "JOBID";
     }
     elsif ($o eq 's') {
       $sortOrder = \&sortBySize;
+      $sortColumn = "SIZE";
     }
     elsif ($o eq 'c') {
       $sortOrder = \&sortByClient;
+      $sortColumn = "CLIENT";
+    }
+    elsif ($o eq 'm') {
+      $sortOrder = \&sortByMediaServer;
+      $sortColumn = "SRVR";
+    }
+    elsif ($o eq 'u') {
+      $sortOrder = \&sortByStorageUnit;
+      $sortColumn = "STU";
     }
     elsif ($o eq 't') {
       $sortOrder = \&sortByThroughput;
+      $sortColumn = "SPD";
     }
   }
-  elsif ($answer eq "i") {
-    $win->addstr(2, 0, "Refresh interval:");
-    echo();  $win->getstr(2, 17, $answer);  noecho();
+  elsif ($answer eq "s") {
+    $win->addstr(2, 0, "Seconds to delay between refresh:");
+    echo();  $win->getstr(2, 34, $answer);  noecho();
     if ($answer =~ /^[\d]+$/) {
       $interval = $answer;
     }
   }
+  elsif ($answer eq "d") {
+    $win->addstr(2, 0, "Number of display passes:");
+    echo();  $win->getstr(2, 26, $answer);  noecho();
+    if ($answer =~ /^[\d]+$/) {
+      $passLimit = $refreshCounter + $answer;
+    }
+  }
   elsif (($answer eq "?") || ($answer eq 'h')) {
-    $win->refresh();
+    my $lines = $LINES-10;  my $cols = $COLS-10;
+    my $help = $win->subwin($lines, $cols, 5, 5);
+    $help->clear();  $help->box('|', '-');
+
+    $help->addstr(1, 2, "$program - A NetBackup job monitoring tool written in Perl");
+    $help->addstr(3, 2, "These single-character commands are available:");
+
+    my $r = 5;
+    $help->addstr($r, 2, "h or ?");
+      $help->addstr($r, 9, "- help; show this text");
+    $help->addstr($r+=1, 2, "s");
+      $help->addstr($r, 9, "- change number of seconds to delay between updates");
+    $help->addstr($r+=1, 2, "d");
+      $help->addstr($r, 9, "- set number of display passes");
+    $help->addstr($r+=1, 2, "o");
+      $help->addstr($r, 9, "- specify sort order");
+    $help->addstr($r+=1, 2, "r");
+      $help->addstr($r, 9, "- force a refresh");
+    $help->addstr($r+=1, 2, "q");
+      $help->addstr($r, 9, "- quit");
+
+    $help->attron(A_REVERSE);
+    $help->addstr($lines-2, 2, "Hit any key to continue:");
+    $help->attroff(A_REVERSE);
+
+    $win->touchwin();
+    $help->refresh();
+    $win->getch();
   }
   $win->move(2, 0);  $win->clrtoeol();
   $win->refresh();
@@ -147,8 +209,17 @@ noecho();  cbreak();
 $win->clear();
 $win->refresh();
 
+local $SIG{WINCH} = sub {
+  print STDERR "Terminal resized...";
+#  initscr();
+  $win = new Curses;
+  $win->clear();
+  $win->refresh()
+};
+
+
 my $hdr = sprintf("%15s", "CLIENT    ");
-if ($opts{'s'}) {
+if ($opts{'v'}) {
   $hdr .= " ".sprintf("%-40s", "             CLASS/SCHEDULE");
 }
 else {
@@ -160,12 +231,12 @@ $hdr .= " ".sprintf("%3s", "OP ");
 $hdr .= " ".sprintf("%6s", "VOLUME");
 $hdr .= " ".sprintf("%9s", "  SIZE   ");
 $hdr .= " ".sprintf("%4s", "SPD ");
-$hdr .= " ".sprintf("%4s", "DRIVE");
+$hdr .= " ".sprintf("%4s", $opts{'r'} ? "STU" : "DRIVE");
 
-my $refreshCounter = 0;
-while (1) {
+while (!$passLimit || ($refreshCounter <= $passLimit)) {
   my $jobCount = 0;
   my $totalSpeed = 0;
+  my $totalWireSpeed = 0;
   my @jl = NBU::Job->list;
 
   #
@@ -181,7 +252,7 @@ while (1) {
 
     my $classID = $job->class->name;
     my $classIDlength = 23;
-    if ($opts{'s'}) {
+    if ($opts{'v'}) {
       $classID .= "/".$job->schedule->name;
       $classIDlength = 40;
     }
@@ -206,10 +277,17 @@ while (1) {
 	  $jobDescription .= " in ".$job->volume->drive->id;
 	}
       }
+      else {
+	if (defined($job->storageUnit)) {
+	  $jobDescription .= " in ".$job->storageUnit->label;
+	}
+      }
     }
     my $alert = 0;
     if (defined($speed)) {
+
       $totalSpeed += $speed;
+      $totalWireSpeed += $speed if ($job->mediaServer != $job->client);
 
       if ($job->dataWritten > (30 * 1024)) {
 	$alert |= ($job->class->name eq "NBUPR2") && ($speed < 5);
@@ -220,20 +298,24 @@ while (1) {
     $win->addstr(4 + $jobCount++, 1, $jobDescription);
     $win->attroff(A_REVERSE) if ($alert);
   }
-  $win->addstr(0, 0, "Pass $refreshCounter; $jobCount active jobs; total throughput ".sprintf("%.2f", $totalSpeed)."Mb/s");
+
+  my $down = 0;
+  my $total = 0;
+  if (!$opts{'r'}) {
+    for my $d (NBU::Drive->pool) {
+      next unless (defined($d->robot));
+      $total++;
+      $down++ if ($d->down);
+    }
+  }
+  $win->addstr(0, 0, "Pass $refreshCounter; $jobCount active jobs; Drives: $down down out of $total");
   $refreshCounter++;
   my $timestamp = localtime;
   $win->addstr(0, $COLS-length($timestamp), $timestamp);
 
-  if (!$opts{'r'}) {
-    my $down = 0;
-    my $total = 0;
-    for my $d (NBU::Drive->pool) {
-      $total++;
-      $down++ if ($d->down);
-    }
-    $win->addstr(1, 0, "Drives: $down down out of $total");
-  }
+  $totalSpeed = sprintf("%.2f", $totalSpeed);
+  $totalWireSpeed = sprintf("%.2f", $totalWireSpeed);
+  $win->addstr(1, 0, "Throughput ${totalSpeed}Mb/s; Network load ${totalWireSpeed}Mb/s");
 
   $win->refresh;
 
@@ -268,3 +350,44 @@ while (1) {
   $win->clear;
 }
 endwin();
+
+=head1 NAME
+
+nbutop.pl - An active backup job monitoring utility for NetBackup
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Any media server platform support by NetBackup which has curses terminal
+capabilities.
+
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<js.pl|js.pl>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

@@ -27,7 +27,7 @@ for my $robot (NBU::Robot->farm) {
   print "Robot ".$robot->id;
   print " controlled from ".$robot->host->name if (defined($robot->host));
   print "\n";
-  for my $drive (sort {$a->id <=> $b->id} $robot->drives) {
+  for my $drive (sort {$a->robotDriveIndex <=> $b->robotDriveIndex} $robot->drives) {
     print "  ".($drive->down ? "v" : "^");
     printf(" %-8s", $drive->name);
     if ($opts{'t'}) {

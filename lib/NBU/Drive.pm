@@ -12,25 +12,37 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.13 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.16 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
 }
 
-my %driveIDPool;
+#
+# Drive indices are unique only local to a media manager, hence
+# the key into the Index pool has to be a combination of
+# index and host.
+# Same for drive names.
+my %driveIndexPool;
 my %driveNamePool;
 
 sub new {
-  my $Class = shift;
+  my $proto = shift;
   my $drive = {};
 
-  bless $drive, $Class;
+  bless $drive, $proto;
 
   if (@_) {
-    $drive->{ID} = shift;
-    $driveIDPool{$drive->{ID}} = $drive;
+    my $index = shift;
+    $drive->{INDEX} = $index;
+
+    my $mmHost = shift;
+    if (!defined($mmHost)) {
+      $mmHost = NBU::Host->new("localhost");
+    }
+
+    $driveIndexPool{$mmHost->name.":".$index} = $drive;
 
     $drive->{STATUS} = "DOWN";
     $drive->{CONTROL} = "DOWN-TLD";
@@ -39,19 +51,24 @@ sub new {
   return $drive;
 }
 
-sub byID {
-  my $Class = shift;
-  my $driveID = shift;
+sub byIndex {
+  my $proto = shift;
+  my $index = shift;
+  my $mmHost = shift;
   my $drive;
 
-  if (defined($driveID) && !($drive = $driveIDPool{$driveID})) {
-    $drive = NBU::Drive->new($driveID);
+  if (!defined($mmHost)) {
+    $mmHost = NBU::Host->new("localhost");
+  }
+
+  if (defined($index) && !($drive = $driveIndexPool{$mmHost->name.":".$index})) {
+    $drive = NBU::Drive->new($index, $mmHost);
   }
   return $drive;
 }
 
 sub byName {
-  my $Class = shift;
+  my $proto = shift;
   my $driveName = shift;
   my $drive;
 
@@ -61,7 +78,7 @@ sub byName {
 
 my %driveHosts;
 sub populate {
-  my $Class = shift;
+  my $proto = shift;
   my $server = shift;
 
   if (!exists($driveHosts{$server->name})) {
@@ -69,12 +86,12 @@ sub populate {
     my $pipe = NBU->cmd("vmoprcmd -h ".$server->name." -xdraw ds |");
     while (<$pipe>) {
       next unless (/^DRIVESTATUS/);
-      my ($marker, $id, $density, $control, $user, $rvsn, $evsn, $request,
+      my ($marker, $index, $density, $control, $user, $rvsn, $evsn, $request,
 	  $robotType, $robotNumber, $state, $name, $assigned, $ignore2, $lastCleaned, $comment
 	) = split(/\s+/, $_, 16);
       chop $comment;
 
-      my $drive = NBU::Drive->byID($id);
+      my $drive = NBU::Drive->byIndex($index, $server);
       if (my $robot = NBU::Robot->new($robotNumber, $robotType)) {
         $drive->{ROBOT} = $robot;  $robot->controlDrive($drive);
       }
@@ -88,7 +105,7 @@ sub populate {
 
       if ($evsn ne "-") {
 	# Unfortunately there is no way to find out which job is using this drive :-(
-	my $mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $id, time);
+	my $mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $drive, time);
         $drive->use($mount, time);
       }
 
@@ -111,12 +128,12 @@ sub loadDriveDetail {
     next unless (/VMGLOB... drive /);
     chop;
 
-    my($key, $d, $driveName, $serial, $host, $volumeDBHost, $robotNumber, $robotDriveNumber, $density, $flags, $wwName) =
+    my($key, $d, $driveName, $serial, $host, $volumeDBHost, $robotNumber, $robotDriveIndex, $density, $flags, $wwName) =
       split;
 
     if (my $drive = NBU::Drive->byName($driveName)) {
       $drive->{SERIALNUMBER} = $serial;
-      $drive->{ROBOTDRIVENUMBER} = $robotDriveNumber;
+      $drive->{ROBOTDRIVEINDEX} = $robotDriveIndex;
       $drive->{WWNAME} = $wwName if ($wwName ne "-");
     }
     $detailed++;
@@ -126,7 +143,7 @@ sub loadDriveDetail {
 }
 
 sub updateStatus {
-  my $Class = shift;
+  my $proto = shift;
   my $server = shift;
 
   my $pipe = NBU->cmd("vmoprcmd -h ".$server->name." -xdraw ds |");
@@ -137,7 +154,7 @@ sub updateStatus {
       ) = split(/\s+/, $_, 16);
     chop $comment;
 
-    my $drive = NBU::Drive->byID($id);
+    my $drive = NBU::Drive->byIndex($id, $server);
 
     $drive->comment($comment);
     $drive->{LASTCLEANED} = $lastCleaned;
@@ -152,12 +169,12 @@ sub updateStatus {
       }
       elsif ($mount->volume->evsn ne $evsn) {
         $drive->free(time);
-	$mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $id, time);
+	$mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $drive, time);
 	$drive->use($mount, time);
       }
     }
     elsif (!$drive->busy && ($evsn ne "-")) {
-      my $mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $id, time);
+      my $mount = NBU::Mount->new(undef, NBU::Media->byEVSN($evsn), $drive, time);
       $drive->use($mount, time);
     }
   }
@@ -165,9 +182,9 @@ sub updateStatus {
 }
 
 sub pool {
-  my $Class = shift;
+  my $proto = shift;
 
-  return (values %driveIDPool);
+  return (values %driveIndexPool);
 }
 
 sub status {
@@ -243,11 +260,17 @@ sub id {
   my $self = shift;
 
   if (@_) {
-    $self->{ID} = shift;
-    $driveIDPool{$self->{ID}} = $self;
+    my $index = shift;
+    $self->{INDEX} = $index;
+
+    my $mmHost = shift;
+    if (!defined($mmHost)) {
+      $mmHost = NBU::Host->new("localhost");
+    }
+    $driveIndexPool{$mmHost->name.":".$index} = $self;
   }
 
-  return $self->{ID};
+  return $self->{INDEX};
 }
 
 sub comment {
@@ -340,6 +363,12 @@ sub robot {
   my $self = shift;
 
   return $self->{ROBOT};
+}
+
+sub robotDriveIndex {
+  my $self = shift;
+
+  return $self->{ROBOTDRIVEINDEX};
 }
 
 sub lastCleaned {

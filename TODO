@@ -1,5 +1,7 @@
-As of $Date: 2002/05/08 11:31:51 $ the list of things we'd like to add to this
+As of $Date: 2002/05/24 03:50:22 $ the list of things we'd like to add to this
 package are:
+- Cover pending mount requests somewhere and possibly automate notification
+  of interested parties
 - Do something useful with bplist.  But what?
 - Make sure we can answer the age old question: "When I restore <xyzzy> which
   tapes will I need?"
@@ -17,12 +19,6 @@ package are:
   the flags field indicates the tape has been marked for deletion.  This format
   though carries more information and might be better used than the current -w
   layout
-- loadJobs and now refreshJobs leverage the -stay_alive feature of bpdbjobs;
-  the next level of job detail and progress monitoring will have to come from
-  perusing the contents of the files in the /usr/openv/netbackup/db/jobs
-  directory.  Especially the *.t files carry immensely useful data on instan-
-  taneous job throughput.  However, with the advent of NBU 4.5 these files will
-  no longer be available... :-(
 - For Media, load information using bpmedialist and vmquery on a single volume
   basis if circumstances warrant, i.e. if the NBU::Media->populate factory
   method has not been invoked yet...

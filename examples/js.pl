@@ -6,7 +6,7 @@ use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('ltsaAdr', \%opts);
+getopts('flsaAdrt:p:', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -23,6 +23,11 @@ sub dispInterval {
   $fmt = sprintf("%02d:", $hours).$fmt;
   return $fmt;
 }
+my $period = 1;
+if ($opts{'p'}) {
+  $period = $opts{'p'};
+}
+
 
 sub sortOrder {
   my $result;
@@ -47,7 +52,8 @@ my $mm;  my $dd;  my $yyyy;
   $mm = $mon + 1;
   $dd = $mday;
   $yyyy = $year;
-my $since = timelocal(0, 0, 0, $dd, $mm-1, $yyyy);
+#my $since = timelocal(0, 0, 0, $dd, $mm-1, $yyyy);
+my $since = $asOf - ($period *  (24 * 60 * 60));
 
 my @jl = NBU::Job->list;
 for my $job (sort sortOrder (@jl)) {
@@ -57,6 +63,9 @@ for my $job (sort sortOrder (@jl)) {
   else {
     next if (!$opts{'A'} && ($job->start < $since));
   }
+
+  # Skip jobs of the wrong type
+  next if ($opts{'t'} && (defined($job->class) && $job->class->type !~ $opts{'t'}));
 
   {
     my $who = sprintf("%15s", $job->client->name);
@@ -80,7 +89,7 @@ for my $job (sort sortOrder (@jl)) {
     print "$who $classID $jid $startTime $state ";
 
     if (my $stu = $job->storageUnit) {
-      printf(" %7s ", $stu->label);
+      printf(" %8s ", $stu->label);
     }
     else {
       printf(" %7s ", "");
@@ -107,9 +116,10 @@ for my $job (sort sortOrder (@jl)) {
       print " ".$job->volume->id;
     }
     print "\n";
+    if ($opts{'f'}) {
+      for my $f ($job->files) {
+	print "  $f\n";
+      }
+    }
   }
-}
-
-if ($opts{'t'}) {
-  printf("Total volume written: %.2f\n", $totalWritten);
 }

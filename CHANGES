@@ -1,3 +1,28 @@
+For release 0.74
+- Run bpconfig as part of gathering the full picture of the NetBackup
+  environment.  This allows us to display information on e-mail notifications
+  amongst other things (see config.pl).
+- The volume-list.pl example displays assigned retention levels for each
+  volume.
+- Courtesy of Peter Buschman we now parse a disk storage unit in bpdbjobs
+  output.
+- js.pl can display the file list for a given job
+- toc.pl example sorts image file lists
+- Man pages for NBU.pm; nbutop.pl
+  The .pl files with man pages were moved into a bin sub-directory and are now
+  officially installed as part of this module
+- Fix the problem caused by bpdbjobs sending refresh data about jobs that
+  are being expired from its database
+- Handle drive indices on a media server by media server basis rather than
+  having a single global list of them.
+- Even the Image class now has a loadImages factory method which will indeed
+  load all images.  Oh the questions you can now finally ask!  Take a peek at
+  examples/statistics.pl for a few simple ones
+- Class objects implement loadImages.
+- Class information is now loaded on demand as well.  Of course if you know
+  you are going to loop over all of them, you'd still want to load them en
+  masse first.
+
 For release 0.73:
 Most changes are bug fix and example script related.  It is interesting to see
 how easy it has been to whip up scripts on top of the object model.  However,

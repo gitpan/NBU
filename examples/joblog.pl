@@ -89,6 +89,7 @@ while ($daysLeft--) {
       if ($option eq "w") {
         /-jobid ([\d]+) /;  $job->id($1);
         /-stunit ([\S]+) /;  $job->storageUnit($1);
+        /-mediasvr ([\S]+) /;  $job->mediaServer(NBU::Host->new($1));
         /-b ([\S]+) /;  my $image = $job->image($1);
         /-cl ([\S]+) /;  $image->class(NBU::Class->new($1));
         /-c ([\S]+) /;  $image->client(NBU::Host->new($1));
@@ -107,14 +108,14 @@ while ($daysLeft--) {
       my $job = NBU::Job->byPID($1);
       my $volume = NBU::Media->byID($2);
 
-      $job->startMounting($volume, parseTime($_));
+      $job->startMounting(parseTime($_), $volume);
     }
     if (/\[([\d]+)\] <2> write_backup: media id ([\S]+) mounted on drive index ([\d]+)/) {
       my $job = NBU::Job->byPID($1);
       my $mediaID = $2;
-      my $driveIndex = $3;
+      my $drive = NBU::Drive->byIndex($3, $job->mediaServer);
 
-      $job->mounted($driveIndex, parseTime($_));
+      $job->mounted(parseTime($_), $drive);
     }
     if (/\[([\d]+)\] <4> write_backup: successfully wrote/) {
       my $job = NBU::Job->byPID($1);

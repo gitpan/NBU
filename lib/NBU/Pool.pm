@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.4 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -43,9 +43,12 @@ sub new {
 sub populate {
   my $Class = shift;
 
+  return $wet if (defined($wet));
+
   my @masters = NBU->masters;  my $master = $masters[0];
 
   die "Could not open pool pipe\n" unless my $pipe = NBU->cmd("vmpool -h ".$master->name." -listall |");
+  $wet = 0;
   my $number;
   my ($name, $host, $user, $group, $description);
   while (<$pipe>) {
@@ -62,9 +65,11 @@ sub populate {
     $user = $1 if (/^pool user:[\s]+([\S]+)/);
     $group = $1 if (/^pool group:[\s]+([\S]+)/);
     $description = $1 if (/^pool description:[\s]+([\S].*)/);
+
+    $wet += 1;
   }
   close($pipe);
-  $wet = 1;
+  return $wet;
 }
 
 sub byName {

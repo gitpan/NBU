@@ -17,7 +17,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.9 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.12 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -38,6 +38,7 @@ sub new {
       bless $class, $Class;
 
       $classList{$class->{NAME} = $name} = $class;
+      $class->{TYPE} = shift;
     }
   }
   return $class;
@@ -46,7 +47,7 @@ sub new {
 my %classTypes = (
   0 => "Standard",
   3 => "Apollo_WBAK",
-  4 => "OBackup",
+  4 => "Oracle",
   6 => "Informix",
   7 => "Sybase",
   10 => "NetWare",
@@ -65,90 +66,95 @@ my %classTypes = (
 );
 
 sub populate {
-  shift;
+  my $proto = shift;
+  my $self = ref($proto) ? $proto : undef;;
 
   NBU::Pool->populate;
 
-  my $pipe = NBU->cmd("bpcllist -allclasses -L |");
+  my $source = $self ? $self->name : "-allclasses";
+  my $pipe = NBU->cmd("bpcllist $source -l |");
+
   my $class;
+  my $schedule;
   while (<$pipe>) {
-
-    if (/^$/) {
-      $class = undef;
+    chop;
+    if (/^CLASS/) {
+      my ($tag, $name, $ptr1, $u1, $u2, $u3, $ptr2) = split;
+      $class = NBU::Class->new($name);
+      $class->{LOADED} = 1;
+      next;
     }
-    if (/^Class Name:[\s]+([\S]+)/) {
-      $class = NBU::Class->new($1);
+    if (/^NAMES/) {
+      next;
     }
-
-    if (/^Class Type:[\s]+([\S]+)/) {
-      $class->type($1);
+    if (/^INFO/) {
+      my ($tag, $type, $networkDrives, $clientCompression, $priority, $ptr1,
+	  $u2, $u3, $maxJobs, $crossMounts, $followNFS,
+	  $inactive, $TIR, $u6, $u7, $restoreFromRaw, $multipleDataStreams, $ptr2) = split;
+      $class->{TYPE} = $type;
+      $class->{NETWORKDRIVES} = $networkDrives;
+      $class->{COMPRESSION} = $clientCompression;
+      $class->{PRIORITY} = $priority;
+      $class->{MAXJOBS} = $maxJobs;
+      $class->{CROSS} = $crossMounts;
+      $class->{FOLLOW} = $followNFS;
+      $class->{ACTIVE} = !$inactive;
+      $class->{TIR} = $TIR;
+      $class->{RESTOREFROMRAW} = $restoreFromRaw;
+      $class->{MDS} = $multipleDataStreams;
+      next;
     }
-    if (/^Active:[\s]+([\S]+)/) {
-      $class->active($1 eq "yes");
+    if (/^KEY/) {
+      my ($tag, @keys) = split;;
+      $class->{KEYS} = \@keys unless ($keys[0] eq "*NULL*");
+      next;
     }
-    if (/^Client Compress:[\s]+([\S]+)/) {
-      $class->clientCompressed($1 eq "yes");
+    if (/^BCMD/) {
+      next;
     }
-    if (/^Follow NFS Mnts:[\s]+([\S]+)/) {
-      $class->followNFSMounts($1 eq "yes");
+    if (/^RCMD/) {
+      next;
     }
-    if (/^Cross Mnt Points:[\s]+([\S]+)/) {
-      $class->crossMountPoints($1 eq "yes");
+    if (/^RES/) {
+      my ($tag, @residences) = split;
+      $class->{RESIDENCE} = $residences[0] unless ($residences[0] eq "*NULL*");
+      next;
     }
-    if (/^Collect TIR Info:[\s]+([\S]+)/) {
-      $class->TIR($1 eq "yes");
+    if (/^POOL/) {
+      my ($tag, @pools) = split;
+      $class->{POOL} = NBU::Pool->byName($pools[0]) unless ($pools[0] eq "*NULL*");
+      next;
     }
-    if (/^Block Incremental:[\s]+([\S]+)/) {
-      $class->BLIB($1 eq "yes");
-    }
-    if (/^Mult\. Data Stream:[\s]+([\S]+)/) {
-      $class->multipleDataStreams($1 eq "yes");
-    }
-    if (/^Class Priority:[\s]+([\d]+)/) {
-      $class->priority($1);
-    }
-    if (/^Max Jobs\/Class:[\s]+([\d]+)/) {
-      $class->maxJobs($1);
-    }
-    if (/^Disaster Recovery:[\s]+([\d]+)/) {
-      $class->DR($1 eq "yes");
-    }
-    if (/^Keyword:[\s]+(.*$)/) {
-      $class->keywords($1)
-        if ($1 ne "(none specified)");
-    }
-    if (/^Client Ecnrypt:[\s]+([\S]+)/) {
-      $class->clientEncrypted($1 eq "yes");
-    }
-    if (/^Residence:[\s]+(.*)/) {
-      foreach my $r (split(/[\s]+/, $1)) {
-        if ($r ne "-") {
-          $class->residence($r);
-        }
-      }
-    }
-    if (/^Volume Pool:[\s]+(.*)/) {
-      foreach my $pn (split(/[\s]+/, $1)) {
-        if ($pn ne "-") {
-          $class->pool(NBU::Pool->byName($pn));
-        }
-      }
-    }
-    if (/^Client\/HW\/OS\/Pri:[\s]+(.*)/) {
-      my ($name, $hw, $os, $pri) = split(/[\s]+/, $1);
+    if (/^CLIENT/) {
+      my ($tag, $name, $platform, $os) = split;
       my $client = NBU::Host->new($name);
-
       $class->loadClient($client);
       $client->loadClass($class);
+      next;
     }
-    if (/^Include:[\s]+(.*)/) {
-      $class->include($1);
+    if (/^INCLUDE/) {
+      my ($tag, $path) = split;
+      $class->include($path);
+      next;
     }
-    if (/^Exclude:[\s]+(.*)/) {
-      $class->exclude($1);
+    if (/^EXCLUDE/) {
+      my ($tag, $path) = split;
+      $class->exclude($path);
+      next;
     }
-    if (/^Schedule:[\s]+([\S]+)/) {
-      $class->loadSchedule(NBU::Schedule->new($1));
+    if (/^SCHED/) {
+      my ($tag, $name, $type) = split;
+      $schedule = $class->loadSchedule(NBU::Schedule->new($class, $name, $type));
+      next;
+    }
+    if (/^SCHEDWIN/) {
+      next;
+    }
+    if (/^SCHEDRES/) {
+      next;
+    }
+    if (/^SCHEDPOOL/) {
+      next;
     }
   }
   close($pipe);
@@ -194,9 +200,10 @@ sub loadSchedule {
   return $newSchedule;
 }
 
-sub clientList {
+sub clients {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   my $clientListR = $self->{CLIENTS};
   return (defined($clientListR) ? (@$clientListR) : undef);
 }
@@ -204,6 +211,7 @@ sub clientList {
 sub exclude {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     if (!defined($self->{EXCLUDE})) {
       $self->{EXCLUDE} = [];
@@ -215,12 +223,13 @@ sub exclude {
   }
   my $excludeListR = $self->{EXCLUDE};
   
-  return (defined($excludeListR) ? (@$excludeListR) : undef);
+  return (defined($excludeListR) ? (@$excludeListR) : ());
 }
 
 sub include {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     if (!defined($self->{INCLUDE})) {
       $self->{INCLUDE} = [];
@@ -232,12 +241,13 @@ sub include {
   }
   my $includeListR = $self->{INCLUDE};
   
-  return (defined($includeListR) ? (@$includeListR) : undef);
+  return (defined($includeListR) ? (@$includeListR) : ());
 }
 
 sub pool {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     print $self->name." already has a pool: ".$self->{POOL}."\n" if ($self->{POOL});
     $self->{POOL} = shift;
@@ -249,6 +259,7 @@ sub pool {
 sub residence {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     print $self->name." already has a residence: ".$self->{RESIDENCE}."\n" if ($self->{RESIDENCE});
     $self->{RESIDENCE} = shift;
@@ -260,15 +271,17 @@ sub residence {
 sub type {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{TYPE} = shift;
   }
-  return $self->{TYPE};
+  return $classTypes{$self->{TYPE}};
 }
 
 sub keywords {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{KEYWORDS} = shift;
   }
@@ -278,6 +291,7 @@ sub keywords {
 sub DR {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{DR} = shift;
   }
@@ -287,6 +301,7 @@ sub DR {
 sub maxJobs {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{MAXJOBS} = shift;
   }
@@ -296,6 +311,7 @@ sub maxJobs {
 sub priority {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{PRIORITY} = shift;
   }
@@ -305,6 +321,7 @@ sub priority {
 sub multipleDataStreams {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{MDS} = shift;
   }
@@ -314,15 +331,22 @@ sub multipleDataStreams {
 sub BLIB {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{BLIB} = shift;
   }
   return $self->{BLIB};
 }
 
+#
+# TIR codes are:
+# 0	off
+# 1	on
+# 2	on with move detection
 sub TIR {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{TIR} = shift;
   }
@@ -332,6 +356,7 @@ sub TIR {
 sub crossMountPoints {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{CROSS} = shift;
   }
@@ -341,33 +366,37 @@ sub crossMountPoints {
 sub followNFSMounts {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{FOLLOW} = shift;
   }
   return $self->{FOLLOW};
 }
 
-sub clientCompressed {
+sub clientCompression {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
-    $self->{COMPRESSED} = shift;
+    $self->{COMPRESSION} = shift;
   }
-  return $self->{COMPRESSED};
+  return $self->{COMPRESSION};
 }
 
 sub clientEncrypted {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
-    $self->{ENCRYPTED} = shift;
+    $self->{ENCRYPTION} = shift;
   }
-  return $self->{ENCRYPTED};
+  return $self->{ENCRYPTION};
 }
 
 sub active {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{ACTIVE} = shift;
   }
@@ -390,11 +419,40 @@ sub name {
 sub providesCoverage {
   my $self = shift;
 
+  $self->populate if (!defined($self->{LOADED}));
   if (@_) {
     $self->{COVERS} = shift;
   }
 
   return $self->{COVERS};
+}
+
+#
+# Load the list of images of this class
+sub loadImages {
+  my $self = shift;
+
+  NBU::Image->loadImages(NBU->cmd("bpimmedia -l -class ".$self->name." |"));
+}
+
+sub images {
+  my $self = shift;
+
+  if (!defined($self->{IMAGES})) {
+    $self->loadImages;
+
+    my @images;
+    for my $client ($self->clients) {
+      for my $image ($client->images) {
+	push @images, $image  if ($image->class == $self);
+      }
+    }
+
+    $self->{IMAGES} = \@images;
+  }
+  my $imageListR = $self->{IMAGES};
+
+  return (@$imageListR);
 }
 
 1;
