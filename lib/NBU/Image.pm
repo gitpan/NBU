@@ -8,13 +8,15 @@ package NBU::Image;
 use strict;
 use Carp;
 
+use NBU::Media;
+
 my %imageList;
 
 BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -255,10 +257,12 @@ sub loadImages {
 	  $u6, $u7,
 	  $expires, $mpx
       ) = split;
-      my $volume = NBU::Media->new($mediaID);
+      my $volume = NBU::Media->new($mediaID);  $volume->density($density);
       my $fragment = NBU::Fragment->new($number, $image, $volume, $offset, $size, $dwo, $fileNumber, $blockSize);
       $volume->insertFragment($fileNumber - 1, $fragment);
       $image->insertFragment($fragment);
+      $image->density($density);
+      $image->volume($volume);
     }
   }
   close($pipe);
@@ -308,6 +312,29 @@ sub fileList {
     return @$flR;
   }
   return undef;
+}
+
+sub density {
+  my $self = shift;
+
+  if (@_) {
+    my $density = shift;
+    $self->{DENSITY} = $density;
+  }
+
+  return $NBU::Media::densities{$self->{DENSITY}};
+}
+
+sub volume {
+  my $self = shift;
+
+  if (@_) {
+    my $volume = shift;
+
+    $self->{VOLUME} = $volume;
+  }
+
+  return $self->{VOLUME};
 }
 
 1;

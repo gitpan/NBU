@@ -35,7 +35,9 @@ for my $robot (NBU::Robot->farm) {
   print "\n";
   for my $drive (sort {$a->robotDriveIndex <=> $b->robotDriveIndex} $robot->drives) {
     print "  ".($drive->down ? "v" : "^");
+    printf(" %2u", $drive->robotDriveIndex);
     printf(" %-8s", $drive->name);
+    printf(" (%2u)", $drive->id) if ($opts{'v'});
     if ($opts{'t'}) {
       if ($drive->busy) {
 	print " (".$drive->mount->volume->id.")";

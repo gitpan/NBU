@@ -6,7 +6,6 @@
 # After that updating the display with information on the active jobs is trivial
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
@@ -18,7 +17,25 @@ use Curses;
 my $program = $0;  $program =~ s /^.*\/([^\/]+)$/$1/;
 
 my %opts;
-getopts('ivldrs:p:M:', \%opts);
+getopts('d?ivlrs:p:M:', \%opts);
+
+if ($opts{'?'}) {
+  print STDERR <<EOT;
+Usage: nbutop.pl [-v] [-i] [-r|-l] [-s <interval>] [-p <limit>] [-M <master>]
+Options:
+  -v       Verbose policy listing
+  -i       Instantaneous throughput (instead of cumulative)
+
+  -r       Replay previous job monitoring session
+  -l       Log this monitoring session
+
+  -s       Refresh after <interval> seconds
+  -p       Exit after <limit> passes
+
+  -M       Alternate NetBackup <master> server
+EOT
+  exit;
+}
 
 my $interval = 60;
 if (defined($opts{'s'})) {
@@ -409,24 +426,72 @@ endwin();
 
 nbutop.pl - An active backup job monitoring utility for NetBackup
 
-=head1 SUPPORTED PLATFORMS
-
-=over 4
-
-=item * 
-
-Any media server platform support by NetBackup which has curses terminal
-capabilities.
-
-
-=back
-
 =head1 SYNOPSIS
 
-    To come...
+    nbutop.pl [-v] [-i] [-r|-l] [-s <interval>] [-p <limit>] [-M <master>]
 
 =head1 DESCRIPTION
 
+In the vein of L<top|top> this utility presents a dynamically refreshing list of
+running NetBackup jobs.  It adapts (somewhat) to your display size but a minimum
+of 100 columns is definitely required.
+
+By combining information from bpdbjobs and vmoprcmd, the exact tape drive
+each job is using can be inferred making many trouble-shooting tasks that much
+easier.  (This obviously does not apply when replaying prior monitoring sessions
+using the B<-r> option.)
+
+After a looooong initial delay during which NetBackup's bpdbjobs utility gathers
+all information it has on all its jobs and sends it across to nbutop.pl the screen
+will show the running jobs as well as some statistics on queued jobs.  Additionally
+you will see a reference to the number of drives nbutop.pl thinks are available
+for use.  Subsequent refreshes do not take nearly as long to calculate since
+bpdbjobs' undocumented "refresh" command is used to gather the raw data for them.
+
+The throughput calculation is simply a matter of adding up all the speeds from all
+the running streams.  By default nbutop.pl will start out displaying cumulative speeds
+meaning it simply divides a job's total amount of data written by the time spent writing
+that data.  Switching to instantaneous throughput causes it to examine the amount
+data written most recently instead thus giving a measurement more indicative of the
+rate at which the job is writing right now.  (See the B<-i> option below.)
+
+Only media servers actually write data to tape.  Some of that data is available local
+to that media server, some (most?) of it arrives via one or more network connections.
+Nbutop.pl separately adds up the throughout on only those jobs whose data arrives via
+a network connection to quickly give you a sense of the load on the network.
+
+There are a few single character commands you may now issue to control nbutop.pl's
+run-time behavior, the most important of which are 'q' to quit out of nbutop.pl and
+'?' for a splash screen describing all the other commands.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-v>
+
+Verbose output only adds the job's schedule to the output display.
+
+=item B<-i>
+
+Start out listing all job throughput information using a trailing "instantaneous"
+calculation rather than the default cumulative one.  This can be changed while nbutop.pl
+is running.  Instantaneous throughput number can fluctuate wildly but are helpful
+when you suspect a job is slowly slowing down.
+
+=item B<-l>
+
+This option enables the logging of the raw job data transmitted from the NetBackup master
+being monitored to a file in the user's home directory called ".alljobs.allcolumns".  This
+can then be used with the B<-r> option to replay the session.
+
+=item B<-r>
+
+Upon replaying a previously loggged series of job reports from a master server, nbutop.pl is
+no longer able to correlate the mounting of volumes to the current state of the tape drives and
+thus is not able to show which drives are (were?) being used.
+
+=back
 
 =head1 SEE ALSO
 

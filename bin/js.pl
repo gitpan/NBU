@@ -1,13 +1,45 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('seflvaAdrt:p:c:o:C:O:M:', \%opts);
+getopts('d?xveflrj:aAt:p:c:o:C:O:M:', \%opts);
+
+if ($opts{'?'}) {
+  print STDERR <<EOT;
+Usage: js.pl [-v] [-r|-l] [-j <jobfile>] [-ef] [-aA] [-o <order>]
+             [-x]
+             [-t <policy-type>] [-c <policy>] [-C <client>] [-O <OS>]
+             [-M <master>]
+Options:
+  -v       Verbose policy listing
+
+  -l       Log this monitoring session
+  -r       Replay previous job monitoring session
+  -j       Provide alternate job history session data
+
+  -e       More detailed error information
+  -f       List files directed to be backed up
+
+  -a       List all jobs from the last 24 hours
+  -A       List all jobs.
+
+  -o       Order jobs by one of id, client or speed
+
+  -x       Produce xml output
+
+  -t       Restrict listing to jobs of <policy-type> type
+  -c       Only list policies matching the provided pattern
+  -C       Restrict listing to clients matching the provided pattern
+  -O       Control which client OS jobs are presented
+
+  -M       Alternate NetBackup <master> server
+EOT
+  exit;
+}
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -81,7 +113,9 @@ my %stateCodes = (
 
 my $totalWritten = 0;
 
-my $asOf = NBU::Job->loadJobs($master, $opts{'r'}, $opts{'l'});
+$opts{'r'} = 1 if ($opts{'j'});
+
+my $asOf = NBU::Job->loadJobs($master, $opts{'r'}, $opts{'l'}, ($opts{'j'} ? $opts{'j'} : undef));
 my $mm;  my $dd;  my $yyyy;
   my ($s, $m, $h, $mday, $mon, $year, $wday, $yday, $isdst) = localtime($asOf);
   $year += 1900;
@@ -91,23 +125,29 @@ my $mm;  my $dd;  my $yyyy;
 #my $since = timelocal(0, 0, 0, $dd, $mm-1, $yyyy);
 my $since = $asOf - ($period *  (24 * 60 * 60));
 
-my $hdr = sprintf("%15s", "CLIENT    ");
-if ($opts{'v'}) {
-  $hdr .= " ".sprintf("%-40s", "             CLASS/SCHEDULE");
+if ($opts{'x'}) {
+  print "<?xml version=\"1.0\"?>\n";
+  print "<job-list>\n";
 }
 else {
-  $hdr .= " ".sprintf("%-23s", "         CLASS");
+  my $hdr = sprintf("%15s", "CLIENT    ");
+  if ($opts{'v'}) {
+    $hdr .= " ".sprintf("%-40s", "             CLASS/SCHEDULE");
+  }
+  else {
+    $hdr .= " ".sprintf("%-23s", "         CLASS");
+  }
+  $hdr .= " ".sprintf("%9s", "  JOBID  ");
+  $hdr .= " ".sprintf("%8s", "  START ");
+  $hdr .= " ".sprintf("%1s", "R");
+  $hdr .= " ".sprintf("%-10s", "   STU");
+  $hdr .= " ".sprintf("%3s", "OP");
+  $hdr .= " ".sprintf("%-8s", "  TIME");
+  $hdr .= " ".sprintf("%-7s", "  FILES");
+  $hdr .= " ".sprintf("%-10s", "   KBYTES");
+  $hdr .= " ".sprintf("%4s", "SPD");
+  print "$hdr\n";
 }
-$hdr .= " ".sprintf("%9s", "  JOBID  ");
-$hdr .= " ".sprintf("%8s", "  START ");
-$hdr .= " ".sprintf("%1s", "R");
-$hdr .= " ".sprintf("%-10s", "   STU");
-$hdr .= " ".sprintf("%3s", "OP");
-$hdr .= " ".sprintf("%-8s", "  TIME");
-$hdr .= " ".sprintf("%-7s", "  FILES");
-$hdr .= " ".sprintf("%-10s", "   KBYTES");
-$hdr .= " ".sprintf("%4s", "SPD");
-print "$hdr\n";
 
 NBU::Class->populate if ($opts{'t'});
 
@@ -133,74 +173,124 @@ for my $job (sort $sortOrder (@jl)) {
   {
     $jobCount += 1;
 
-    my $who = sprintf("%15s", $job->client->name);
+    my $who = $job->client->name;
     $activeClients{$who} += 1;
+    $who = sprintf("%15s", $who) unless ($opts{'x'});
 
-    my $classID = $job->class->name;
+    my $policyName = my $classID = $job->class->name;
+    my $scheduleName = $job->schedule->name;
     my $classIDlength = 23;
     if ($opts{'v'}) {
-      $classID .= "/".$job->schedule->name;
+      $classID .= "/".$scheduleName;
       $classIDlength = 40;
     }
     $classID = sprintf("%-".$classIDlength."s", $classID);
 
-    my $jid = sprintf("%7u-%1u", $job->id, defined($job->try) ? $job->try : 0);
+    my $jid = $job->id;
+    $jid = sprintf("%7u", $job->id) unless ($opts{'x'});
+    my $try = defined($job->try) ? $job->try : 0;
     my $state = $stateCodes{$job->state};
 
 
-    my $startTime = ((time - $job->start) < (24 * 60 * 60)) ?
-	  substr(localtime($job->start), 11, 8) :
-	  " ".substr(localtime($job->start), 4, 6)." ";
-
-    print "$who $classID $jid $startTime $state";
-
-    if (my $stu = $job->storageUnit) {
-      printf(" %10s ", $stu->label);
+    if ($opts{'x'}) {
+      my $startTime = substr(localtime($job->start), 4);
+      print "  <job id=\"$jid\"";
+      print " try=\"$try\"" if ($try);
+      print " policy=\"$policyName\" schedule=\"$scheduleName\" client=\"$who\" start=\"$startTime\"";
     }
     else {
-      printf(" %10s ", "");
+      my $startTime = ((time - $job->start) < (24 * 60 * 60)) ?
+	  substr(localtime($job->start), 11, 8) :
+	  " ".substr(localtime($job->start), 4, 6)." ";
+      print "$who $classID ${jid}-${try} $startTime $state";
+    }
+
+    if (my $stu = $job->storageUnit) {
+      if ($opts{'x'}) {
+	print " storageunit=\"".$stu->label."\"";
+      }
+      else {
+        printf(" %10s ", $stu->label);
+      }
+    }
+    else {
+      printf(" %10s ", "") unless ($opts{'x'});
     }
 
     if ($state eq "D") {
-      printf(" %3d ", $job->status);
+      if ($opts{'x'}) {
+	print " exitcode=\"".$job->status."\" elapsed=\"".dispInterval($job->elapsedTime)."\"";
+      }
+      else {
+        printf(" %3d ", $job->status);
+        print dispInterval($job->elapsedTime);
+      }
       if ($job->status == 0) {
 	if (defined($job->dataWritten)) {
 	  $totalWritten += ($job->dataWritten / 1024);
 	  $MBytes += $job->dataWritten / 1024;
 	}
       }
-      print dispInterval($job->elapsedTime);
     }
     elsif ($state eq "A") {
       my $op = $job->operation;
-      print " $op ".dispInterval($job->busy);
+      if ($opts{'x'}) {
+	print " operation=\"$op\" elapsed=\"".dispInterval($job->elapsedTime)."\"";
+      }
+      else {
+        print " $op ".dispInterval($job->busy);
+      }
     }
 
     if ($state ne "Q") {
       if (defined($job->filesWritten)) {
-        printf(" %7d", $job->filesWritten);
+	if ($opts{'x'}) {
+	  print " files=\"".$job->filesWritten."\"";
+	}
+	else {
+          printf(" %7d", $job->filesWritten);
+	}
       }
       else {
-	printf(" 7%s", "");
+	printf(" 7%s", "") unless ($opts{'x'});
       }
       if (defined($job->dataWritten)) {
-        printf(" %10d", $job->dataWritten);
+	if ($opts{'x'}) {
+	  print " kbytes=\"".$job->dataWritten."\"";
+	}
+	else {
+          printf(" %10d", $job->dataWritten);
+	}
       }
       else {
-	printf(" 10%s", "");
+	printf(" 10%s", "") unless ($opts{'x'});
       }
-      printf(" %.2f", ($job->dataWritten / $job->elapsedTime / 1024))
-	if (($job->elapsedTime > 0) && defined($job->dataWritten));
+      if (($job->elapsedTime > 0) && defined($job->dataWritten)) {
+        my $speed = sprintf("%.2f", ($job->dataWritten / $job->elapsedTime / 1024));
+	if ($opts{'x'}) {
+	  print " speed=\"$speed\"";
+	}
+	else {
+          print " $speed";
+	}
+      }
 
       if (($state eq "A") && ($job->volume)) {
-	print " ".$job->volume->id;
+	print " ".$job->volume->id if (!$opts{'x'});
       }
     }
-    print "\n";
+
+    print ">" if ($opts{'x'});
+
     if ($opts{'f'}) {
       for my $f ($job->files) {
 	next if ($f =~ /NEW_STREAM/);
-	print "  $f\n";
+	if ($opts{'x'}) {
+	  print "\n    <file name=\"$f\"/>";
+	}
+	else {
+	  print "\n  $f";
+	}
       }
     }
     if ($opts{'e'}) {
@@ -213,18 +303,117 @@ for my $job (sort $sortOrder (@jl)) {
 
 	my $windowsComment = $1 if ($msg =~ s/(\(WIN32.*\))//);
 
-	printf("%15s - %s\n", "  +".dispInterval($tm-$job->start), $msg);
+	printf("\n%15s - %s", "  +".dispInterval($tm-$job->start), $msg);
 	if (defined($windowsComment) && ($windowsComment !~ /WIN32 32:/)) {
-	  printf("%15s   %s\n", "", $windowsComment);
+	  printf("\n%15s   %s", "", $windowsComment);
 	}
       }
     }
+    if ($opts{'x'}) {
+      print "\n  </job>";
+    }
+    print "\n";
   }
 }
-if ($opts{'s'}) {
-  my $clientCount = (keys %activeClients) + 1;
-  my $GBytes = sprintf("%.2f", $MBytes / 1024);
-  print <<EOT;
-$jobCount jobs from $clientCount clients wrote ${GBytes}Gb to tape
-EOT
-}
+print "</job-list>\n" if ($opts{'x'});
+
+=head1 NAME
+
+js.pl - NetBackup job status reporting
+
+=head1 SYNOPSIS
+
+    js.pl [-v] [-r|-l] [-j <jobfile>] [-ef] [-aA] [-o <order>]
+          [-x]
+          [-t <policy-type>] [-c <policy>] [-C <client>] [-O <OS>]
+          [-M <master>]
+
+=head1 DESCRIPTION
+
+In the vein of L<ps|ps> js.pl lists the currently running NetBackup jobs.  However, it
+is also capable of regurgitating the fate of jobs already completed by using the B<-a> and
+B<-A> options.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-v>
+
+Verbose output only adds the job's schedule to the output display.
+
+=item B<-a>
+
+By default, js.pl only lists active jobs.  With the B<-a> option it lists
+inactive (more commonly known as completed) jobs as well.
+
+=item B<-A>
+
+By default, js.pl only lists jobs from the past 24 hours of operation.  Setting
+B<-A> lists all jobs in the NetBackup job database.
+
+=item B<-o> speed|client
+
+The most common way to list NetBackup jobs is in descending job-id order, i.e. the most recent
+jobs first.  The B<-o> option allows for two other orderings, namely speed and client.  Speed
+ordering lists jobs from fastest to slowest; client ordering lists jobs by client, leaving the
+original reverse chronological ordering intact as much as possible.
+
+=item B<-x>
+
+The standard fixed width column output format can be exchanged for XML data by setting the B<-x>
+option.  XML data can easily be viewed in web browsers and is also manipulatable in Excel.
+
+=item B<-l>
+
+This option enables the logging of the raw job data transmitted from the NetBackup master
+being monitored to a file in the user's home directory called ".alljobs.allcolumns".  This
+can then be used with the B<-r> option to replay the session.
+
+=item B<-r>
+
+Report on a set of data previously logged using the B<-l> option.
+
+=item B<-j> jobfile
+
+Using B<-r> without the B<-j> option will result in a replace of the data contained in the
+file ~/.alljobs.allcolumns, i.e. the location where the B<-l> dropped off the last recorded
+session.  When reaching farther back in time, copies of these job logs can be maintained and
+replayed by overriding the file being reported on.
+
+=item B<-e>
+
+More detailed job error information will be displayed when this option is given.  NetBackup's
+bperror command is used to retrieve this additional data but its output is distilled some to
+keep the display more compact.
+
+=item B<-f>
+
+Those jobs with explicit file lists, the list is displayed below the job information.  In cases
+where the jobs list consists of the directive "ALL_LOCAL_DRIVES", the list is expanded to the
+actual set of mounts/drives assigned to each job.  ("NEW_STREAM" directives are filtered out.)
+
+=back
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<nbutop.pl|nbutop.pl>
+
+=back
+
+=head1 BUGS
+
+The B<-j> option should be made more intelligent so it can pull a collection of job history files
+from a directory.
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

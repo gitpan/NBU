@@ -1,7 +1,6 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Date::Parse;
@@ -10,7 +9,7 @@ use Date::Parse;
 use NBU;
 
 my %opts;
-getopts('hvftdw:c:s:', \%opts);
+getopts('?dvftw:c:s:', \%opts);
 
 my $window = defined($opts{'w'}) ? $opts{'w'} : 10;
 my $controlSize = defined($opts{'c'}) ? $opts{'c'} : 5 * 1024;
@@ -23,7 +22,7 @@ NBU->debug($opts{'d'});
 #
 # The class representing the SAP backup we're interested in and a target date/time are
 # all we need:
-if ((@ARGV != 2) || $opts{'h'}) {
+if ((@ARGV != 2) || $opts{'?'}) {
   print STDERR <<EOT;
 Usage: refresh.pl <SAP-INSTANCE> <time-of-split>
 Options:
@@ -217,3 +216,75 @@ $logSpace = sprintf("%.2f", $logSpace / 1024 / 1024);
 if (!$opts{'t'}) {
   print "The $logCount archive log files will need ${logSpace}Gb\n";
 }
+
+=head1 NAME
+
+refresh.pl - Compute tape volumes needed for WM(S/Q) refresh
+
+=head1 SYNOPSIS
+
+    refresh.pl <SAP-Instance> <split-time> [-t|-v] [-f] [-w <window>] [-s <count>] [-c <size>]
+
+=head1 DESCRIPTION
+
+SAP instance backups made using SAP's brtools suite are occasionally used to clone
+such instances.  This utility figures out which tape volumes are needed to perform such
+a cloning operation.
+
+Given a master SAP instance name and point-in-time to be used as the reference state,
+refresh.pl goes through and works backwards from that poin-in-time to find the most recent
+SAP backup immediately preceding the cut off.  As this backup is located, a list of intervening
+archive log backups is maintained as well.  The final list of tapes then covers the
+main database backup as well as all required archive logs.
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-t>
+
+Provide terse output.  This pretty much boils down to tape volume ids only.
+
+=item B<-v>
+
+At the other extreme verbose output will show exactly what volumes are needed for what
+reasons.
+
+=item B<-f>
+
+Normally refresh.pl wants to include at least one extra set of archive logs past the split-time
+to ensure all necessary data will be available to the DBA's when rolling the database forward
+from the backup.  Should such an extra set not be available, the B<-f> option will force refresh.pl
+to proceed and list volume ids after all.
+
+=item B<-w> window
+
+Almost always, a single brbackup run results in multiple NetBackup jobs.  With the default settings
+refresh.pl assumes all such NetBackup jobs started within a 10 minute window.  The B<-w> option allows
+you to change this number.
+
+=item B<-s> count
+
+If you know the most recent SAP backup is corrupt or the tapes onto which it is written have been
+damaged, providing refresh.pl with skip count will have it ignore that many SAP backups as it scans
+backwards in time.  Note that the intervening archive logs are still needed!
+
+=item B<-c> size
+
+A key item in determining when an SAP instance backup completed is the fact that once the actual database
+files have been written out, a small set of files is written in a separate NetBackup job.  To distinguish
+between the bulk data and this bit of control information the assumption is made that the control
+information takes up less than 5 MBytes.  The B<-c> size option lets you change this to some other number of
+MBytes.
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

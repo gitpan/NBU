@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.15 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -93,7 +93,7 @@ sub populate {
     }
     elsif ($type == 2) {
       $stu->{DRIVECOUNT} = $count;
-      $stu->{DENSITY} = $NBU::Media::densities{$density};
+      $stu->{DENSITY} = $density;
     }
 
     $stu->{ONDEMAND} = $onDemand;
@@ -188,7 +188,7 @@ sub type {
 sub density {
   my $self = shift;
 
-  return $self->{DENSITY};
+  return $NBU::Media::densities{$self->{DENSITY}};
 }
 
 sub driveCount {

@@ -1,6 +1,6 @@
 As of $Date: 2002/08/02 02:13:43 $ the list of things we'd like to add to this
 package are:
-- Tie Classes and Clients to their respctively required Licenses
+- Tie Classes and Clients to their respective required Licenses
 - Cover pending mount requests somewhere and possibly automate notification
   of interested parties
 - Do something useful with bplist.  But what?

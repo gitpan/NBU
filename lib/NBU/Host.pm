@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -282,7 +282,11 @@ sub loadCoverage {
           push @$clR, $class;
         }
       }
-      elsif ($self->os =~ /Windows(NT|2000)/) {
+      elsif ($self->os =~ /Windows(NT|2000|XP)/) {
+	my $deviceFile;
+	if ($self->NBUVersion eq "4.5.0") {
+	  $deviceFile = shift @remainder;
+	}
         my ($className, $status) = @remainder;
         if ($className eq "UNCOVERED") {
 	  $coverage{$mountPoint} = undef;

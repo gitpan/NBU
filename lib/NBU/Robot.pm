@@ -13,7 +13,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw(%robotLevel);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%robotLevel);
   @EXPORT_OK =   qw();
@@ -151,7 +151,7 @@ sub populate {
     }
   }
 
-  $self->{CAPACITY} = $lastSlot;
+  $self->{CAPACITY} = defined($lastSlot) ? $lastSlot : 0;
 }
 
 sub byID {
@@ -303,10 +303,15 @@ sub slotList {
   my $slotList = $self->{SLOTS};
   my @list;
 
-  # slot 0 is not used but PERL arrays default to 0 based indexing...
-  push @list, undef;
-  for my $s (1..$self->capacity) {
-    push @list, $$slotList{$s};
+  #
+  # Undefined or unreachable robots have no capacity thus
+  # should result in completely empty lists
+  if (my $lastSlot = $self->capacity) {
+    # slot 0 is not used but PERL arrays default to 0 based indexing...
+    push @list, undef;
+    for my $s (1..$lastSlot) {
+      push @list, $$slotList{$s};
+    }
   }
 
   return @list;
@@ -362,12 +367,12 @@ sub loadRobotDetail {
 
     # Any media server with drives controlled by this robot will generate an entry for this robot
     # However, we only care about the entry from the host which is the controlling host.
-    next unless ($controlHostName ne "-");
+    next unless ($controlHostName eq "-");
 
     if (my $robot = NBU::Robot->byID($robotNumber)) {
       $robot->{SERIALNUMBER} = $serial;
       $robot->{VOLDBHOST} = NBU::Host->new($voldbHostName);
-      $robot->{CONTROLHOST} = NBU::Host->new($controlHostName);
+      $robot->{CONTROLHOST} = NBU::Host->new($host);
 
       $robot->{DETAILED} = 1;
     }

@@ -1,4 +1,4 @@
-#}}
+#
 # Copyright (c) 2002 Paul Winkeler.  All Rights Reserved.
 # This program is free software; you may redistribute it and/or modify it under
 # the same terms as Perl itself.
@@ -17,7 +17,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.33 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.34 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -302,10 +302,12 @@ sub populate {
   close($pipe);
 }
 
+my $mediaErrors = "/usr/local/etc/media-errors.csv";
 sub loadErrors {
   my $proto = shift;
+  my $errorCount;
 
-  if (open(PIPE, "<".$ENV{HOME}."/media-errors.csv")) {
+  if (open(PIPE, "<$mediaErrors")) {
     # Place this use directive inside an eval to postpone missing
     # module diagnostics until run-time
     eval "use Text::CSV_XS";
@@ -319,11 +321,16 @@ sub loadErrors {
 	my $volume = NBU::Media->byID($fields[1]);
 	if ($volume) {
 	  $volume->logError($fields[0], $fields[5]);
+	  $errorCount += 1;
 	}
       }
     }
     close(PIPE);
   }
+  elsif (NBU->debug) {
+    print STDERR "Could not load media errors from $mediaErrors\n";
+  }
+  return $errorCount;
 }
 
 sub listIDs {
@@ -828,7 +835,7 @@ sub unfreeze {
 sub suspended {
   my $self = shift;
 
-  return $self->{STATUS} & 0x2;
+  return $self->allocated ? ($self->{STATUS} & 0x2) : undef;
 }
 
 sub unsuspend {

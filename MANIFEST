@@ -21,16 +21,13 @@ lib/NBU/Pool.pm
 lib/NBU/Schedule.pm
 lib/NBU/StorageUnit.pm
 t/installed.t
-examples/class-list.pl
 examples/client-list.pl
 examples/config.pl
 examples/freeze.pl
 examples/joblog.pl
 examples/pool-list.pl
 examples/robot-status.pl
-examples/statistics.pl
 examples/stu.pl
-examples/toc.pl
 examples/volume-use.pl
 bin/history.pl
 bin/js.pl
@@ -43,4 +40,7 @@ bin/volume-status.pl
 bin/backup-stats.pl
 bin/refresh.pl
 bin/coverage.pl
+bin/toc.pl
+bin/class-list.pl
+bin/vu.pl
 conf/robot-conf.xml

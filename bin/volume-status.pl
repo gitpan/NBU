@@ -1,7 +1,6 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
@@ -19,6 +18,7 @@ print "\"".join('","',
              "id", "pool", "group", "errors", "mounts", "limit", "expires",
               "robot", "slot").
       "\"\n" if ($opts{'c'});
+
 while (<STDIN>) {
   next if (/^[\s]*\#/);
 
@@ -73,18 +73,9 @@ while (<STDIN>) {
       }
     }
 
-    if ($volume->allocated) {
-      $status .= "Allocated to ".$volume->mmdbHost->name.": ";
-      if ($volume->expires > time) {
-        $status .= "Expires ".localtime($volume->expires).": ";
-      }
-      else {
-        $status .= "Expired ".localtime($volume->expires).": ";
-      }
-      $status .= "Retention level ".$volume->retention->level." " if ($opts{'r'});
+    if ($volume->suspended) {
+      $status .= "Suspended: ";
     }
-    $reportOn &&= $volume->allocated if (exists($opts{'a'}));
-    $reportOn &&= !$volume->allocated if (exists($opts{'A'}));
 
     if ($volume->frozen) {
       $status .= "Frozen: ";
@@ -97,6 +88,19 @@ while (<STDIN>) {
     }
     else {
     }
+
+    if ($volume->allocated) {
+      $status .= "Allocated to ".$volume->mmdbHost->name.": ";
+      if ($volume->expires > time) {
+        $status .= "Expires ".localtime($volume->expires).": ";
+      }
+      else {
+        $status .= "Expired ".localtime($volume->expires).": ";
+      }
+      $status .= "Retention level ".$volume->retention->level." " if ($opts{'r'});
+    }
+    $reportOn &&= $volume->allocated if (exists($opts{'a'}));
+    $reportOn &&= !$volume->allocated if (exists($opts{'A'}));
   }
 
   if ($reportOn) {
@@ -133,32 +137,54 @@ while (<STDIN>) {
 
 =head1 NAME
 
-volume-status.pl - A NetBackup volume attribute analysis tool
-
-=head1 SUPPORTED PLATFORMS
-
-=over 4
-
-=item * 
-
-Any media server platform supported by NetBackup
-
-=back
+volume-status.pl - Volume attribute analysis tool
 
 =head1 SYNOPSIS
 
-    To come...
+    volume-status.pl [-c] [-pgr] [-lsU] [-fF] [-aA] [-e error-threshold] [-m mount-threshold]
 
 =head1 DESCRIPTION
 
+For each volume label provided on standard input, subject to numerous options, the
+following information is printed on STDOUT:
+
+=over 4
+
+=item volume label
+
+=item mount count
+
+=item volume pool only if B<-p> is set
+
+=item volume group only if B<-g> is set
+
+=item error count (if non-zero)
+
+The error count assigned to a volume is simply read from the file /usr/local/etc/media-errors.csv;
+it is up to the local system administrators to gather the output of the tool L<volstats.pl|volstats.pl> from
+each media server and concatenate the data-sets into the above mentioned file.
+
+=item suspended or frozen status
+
+=item robot number if the volume is currently in a robot
+
+=back
+
+The following information only applies to volumes that are currently in use:
+
+=over 4
+
+=item expiration status
+
+=item retention level only if B<-r> is set
+
+=back
 
 =head1 SEE ALSO
 
 =over 4
 
-=item L<volume-list.pl|volume-list.pl>
-
-=item L<toc.pl|toc.pl>
+=item L<volume-list.pl|volume-list.pl>, L<toc.pl|toc.pl>
 
 =back
 

@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 
 <!--
-This file, /usr/local/etc/robot.conf, is used by the robot-snapshot.pl
-script to comment on tape robot contents.
+This file, /usr/local/etc/robot-conf.xml, is used by various NBU scripts
+to monitor and maintain robot and storage unit contents
 
 Each robot element consists of a list of pool elements
 
@@ -13,21 +13,61 @@ these additional attributes:
 - empty
   there must be at least that many empty volumes available for that pool
 -->
+<media-configuration>
+  <robot-levels>
+    <frozen>0</frozen>
+    <robot id ="1">
+      <pool name="Scratch"/>
+      <pool name="MAXpool">
+	<full>140</full>
+      </pool>
+      <pool name="NetBackup">
+	<total>1</total>
+      </pool>
+    </robot>
+    <robot id ="2">
+      <pool name="Scratch"/>
+      <pool name="SAP_Production"/>
+      <pool name="MAXpool">
+	<full>140</full>
+      </pool>
+      <pool name="NetBackup">
+	<total>1</total>
+      </pool>
+    </robot>
+    <robot id ="3">
+      <pool name="Scratch"/>
+      <pool name="MAXpool">
+	<full>70</full>
+      </pool>
+    </robot>
+    <robot id ="4">
+      <pool name="Scratch"/>
+      <pool name="MAXpool">
+	<full>70</full>
+      </pool>
+    </robot>
+    <robot id ="5">
+      <pool name="Scratch"/>
+      <pool name="MAXpool"/>
+      <pool name="SAP_Production"/>
+    </robot>
+    <robot id ="6">
+      <pool name="Scratch"/>
+      <pool name="MAXpool"/>
+    </robot>
+  </robot-levels>
 
-
-<robotLevels>
-  <robot id ="1">
-    <pool id="MAXpool" full="140"/>
-    <pool id="NetBackup" total="1"/>
-  </robot>
-  <robot id ="2">
-    <pool id="SAP_Production" full="140"/>
-    <pool id="NetBackup" total="1"/>
-  </robot>
-  <robot id ="3">
-    <pool id="MAXpool" full="70"/>
-  </robot>
-  <robot id ="4">
-    <pool id="MAXpool" full="70"/>
-  </robot>
-</robotLevels>
+  <itchy>
+    <pool name="MAXpool">
+      <density code="11"/>
+      <density code="14">
+	<newpool name="relabel"/>
+      </density>
+    </pool>
+    <pool name="SAP_Production">
+      <density code="11"/>
+      <density code="14"/>
+    </pool>
+  </itchy>
+</media-configuration>

@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.86',
+            'VERSION'         => '0.90',
 
             'EXE_FILES'       => [
                'bin/coverage.pl',
@@ -17,6 +17,10 @@ my %args = (
                'bin/backup-stats.pl',
                'bin/scratch.pl',
                'bin/refresh.pl',
+               'bin/toc.pl',
+               'bin/class-list.pl',
+	       'bin/vu.pl',
+	       'bin/sla.pl',
             ],
             
             dist              => {

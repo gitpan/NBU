@@ -1,14 +1,13 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
 use POSIX qw(strftime);
 
 my %opts;
-getopts('dcuUaAfFe:m:', \%opts);
+getopts('dc', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -80,12 +79,45 @@ for my $m (sort levelStatusSort @list) {
 	  .($m->allocated ? ": Allocated ".substr(localtime($m->allocated), 4).": rl ".$m->retention->level : "")
 #	  .($m->mpx ? ": Multiplexed" : "")
 #	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
+        .(($m->allocated && $m->full) ? ": topped off at ".$m->dataWritten : "")
 	  ;
     if (defined($m->offsiteLocation)) {
       print " at ".$m->offsiteLocation."/".(defined($m->offsiteSlot) ? sprintf("%4d", $m->offsiteSlot) : "????");
       print " return ".(defined($m->offsiteReturnDate) ? substr(localtime($m->offsiteReturnDate), 4) : "Never");
     }
     print ": Frozen" if ($m->frozen);
+    print ": Suspended" if ($m->suspended);
   }
   print "\n";
 }
+
+=head1 NAME
+
+volume-list.pl - List Contents of NetBackup Volume Db and Media Manager Db
+
+=head1 SYNOPSIS
+
+    volume-list.pl [-c]
+
+=head1 DESCRIPTION
+
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<volume-status.pl|volume-status.pl>
+
+=item L<robot-snapshot.pl|robot-snapshot.pl>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

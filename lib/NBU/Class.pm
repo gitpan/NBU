@@ -17,7 +17,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.23 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -160,7 +160,7 @@ sub loadClasses {
     }
     if (/^RES /) {
       my ($tag, @residences) = split;
-      $class->{RESIDENCE} = $residences[0] unless ($residences[0] eq "*NULL*");
+      $class->{RESIDENCE} = NBU::StorageUnit->byLabel($residences[0]) unless ($residences[0] eq "*NULL*");
       next;
     }
     if (/^POOL /) {
@@ -336,6 +336,12 @@ sub residence {
   }
 
   return $self->{RESIDENCE};
+}
+
+sub storageUnit {
+  my $self = shift;
+
+  return $self->residence(@_);
 }
 
 my %policyAware = (

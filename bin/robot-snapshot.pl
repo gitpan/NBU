@@ -1,7 +1,6 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 
@@ -11,7 +10,26 @@ use XML::XPath::XMLParser;
 use NBU;
 
 my %opts;
-getopts('ohdispf:', \%opts);
+getopts('d?ohispf:', \%opts);
+
+if ($opts{'?'}) {
+  print STDERR <<EOT;
+Usage: robot-snapshot.pl [-s] [-hi] [-p] [-o] [-f <configfile>] [robot# [robot# ...]]
+Options:
+  -s       Provide robot content summary
+
+  -h       Preface each robot's listing with a header section
+  -i       List full robot inventory
+
+  -p       Gather and display volume pool data
+
+  -o       List volume id of next volume to expire
+
+  -f       Provide alternate robot configuration control file
+EOT
+  exit;
+}
+
 
 NBU->debug($opts{'d'});
 
@@ -54,7 +72,8 @@ for my $robot (@list) {
       print " on ".$robot->host->name
     }
     else {
-      print " cannot be located!";
+      print " cannot be located!\n";
+      next;
     }
     print "\n";
     $prefix = "   ";
@@ -68,7 +87,7 @@ for my $robot (@list) {
   my $cleanCount = 0;  my $cleanings = 0;
   my %poolCount;
   my %emptyCount;  my %fullCount;
-  my %frozenCount;
+  my %frozenCount;  my %suspendedCount;
 
   my $firstExpiration;
   for my $position (1..$robot->capacity) {
@@ -96,6 +115,10 @@ for my $robot (@list) {
 	      if (!defined($firstExpiration) || ($volume->expires < $firstExpiration->expires)) {
 		$firstExpiration = $volume;
 	      }
+	    }
+	    if ($volume->suspended) {
+              $slot .= " SUSPENDED";
+              $suspendedCount{$volume->pool->name} += 1;
 	    }
 	    if ($volume->frozen) {
               $slot .= " FROZEN";
@@ -138,7 +161,7 @@ for my $robot (@list) {
   my $robotConfig = ($nodeset->size == 1) ? $nodeset->pop : undef;
 
   if (defined($robotConfig)) {
-    $nodeset = $robotConfig->find('pool[@id=\'NetBackup\']');
+    $nodeset = $robotConfig->find('pool[@name=\'NetBackup\']');
     if ($nodeset->size == 1) {
       my $constraint = $nodeset->pop;
       my $target = $constraint->getAttribute('total');
@@ -152,7 +175,7 @@ for my $robot (@list) {
     my $poolSpecs;
 
     if (defined($robotConfig)) {
-      $nodeset = $robotConfig->find('pool[@id=\''.$pool.'\']');
+      $nodeset = $robotConfig->find('pool[@name=\''.$pool.'\']');
       if ($nodeset->size == 1) {
 	$poolSpecs = $nodeset->pop;
       }
@@ -163,11 +186,18 @@ for my $robot (@list) {
     my $full = $fullCount{$pool} += 0;
     my $partial = $total - $full - $empty;
     my $frozen = $frozenCount{$pool} += 0;
+    my $suspended = $suspendedCount{$pool} += 0;
 
     if (defined($poolSpecs)) {
 
       print "${prefix}$total $pool\: $empty/$partial/$full\n";
 
+      if ((my $limit = $poolSpecs->find('suspended | ancestor::*/suspended'))->size > 0) {
+	if ($suspended > (my $value = $limit->pop->string_value)) {
+	  my $count = $suspended - $value;
+	  print "${prefix}     Remove $count suspended $pool volumes\n";
+	}
+      }
       if ((my $limit = $poolSpecs->find('frozen | ancestor::*/frozen'))->size > 0) {
 	if ($frozen > (my $value = $limit->pop->string_value)) {
 	  my $count = $frozen - $value;
@@ -206,7 +236,7 @@ for my $robot (@list) {
     print "${prefix}$emptyCount completely empty volumes available\n";
     print "${prefix}$cleanings cleanings left on $cleanCount cleaning volumes\n";
   }
-  if ($opts{'o'}) {
+  if ($opts{'o'} && defined($firstExpiration)) {
     print "${prefix}Oldest full volume is ".$firstExpiration->id." expiring on ".localtime($firstExpiration->expires)."\n";
   }
 }
@@ -217,9 +247,15 @@ robot-snapshot.pl - Report and Analyze Tape Robot Contents
 
 =head1 SYNOPSIS
 
-robot-snapshot.pl
+    robot-snapshot.pl [-s] [-hi] [-p] [-o] [-f <configfile>] [robot#1 [robot#2 ...]]
 
 =head1 DESCRIPTION
+
+Taking a snapshot of a robot involves taking an inventory of its tape volumes, optionally
+listing them in robot slot number order, and commenting on the quantity of volumes in
+various volume pools.  The observations robot-snapshot.pl makes with regards to the various
+volume pools are driven by a set of robot content rules defined in a configuration file.  By
+default this is the file /usr/local/etc/robot-conf.xml
 
 =head1 SEE ALSO
 

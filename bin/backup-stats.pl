@@ -1,7 +1,6 @@
 #!/usr/local/bin/perl -w
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 use Time::Local;
@@ -94,7 +93,7 @@ for my $job (@jl) {
   next if (!defined($job->storageUnit));
 
   if (defined($lastDensity) && ($job->storageUnit->density ne $lastDensity)) {
-    report("Jobs in the 24hrs since ".localtime($since)." using $lastDensity tapes");
+    report("Backup streams in the 24hrs since ".localtime($since)." using $lastDensity tapes");
 
     $successes = 0;
     $failures = 0;
@@ -149,7 +148,7 @@ sub report {
   my $masterName = $master->name;
   print <<EOT;
 \n\t\t$title
-The master scheduler on $masterName ran $jobCount jobs from $clientCount unique clients
+Master scheduler $masterName ran $jobCount streams from $clientCount unique clients
 $successes were successful:
   writing ${GBytes}Gb to tape over $elapsedTime
 $failures terminated prematurely:

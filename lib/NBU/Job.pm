@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.41 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.43 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -71,6 +71,10 @@ sub loadJobs {
   if (defined($readFromFile)) {
     my $file = defined($alternateFromFile) ? $alternateFromFile : $fromFile;
     die "Cannot open previous job log file \"$file\"\n" unless open(PIPE, "<$file");
+
+    if (NBU->debug) {
+      print STDERR "Reading:   job history file $file\n";
+    }
     $jobPipe = *PIPE{IO};
     my @stat = stat(PIPE);  $asOf = $stat[9];
   }
@@ -841,6 +845,28 @@ sub printHeader {
   print "Process $pid manages job $id\n";
 
   return $self;
+}
+
+#
+# The business and system methods are here to facilitate job reporting
+# that is business system oriented rather than a simple backup stream
+# accounting line-item listing
+sub business {
+  my $self = shift;
+
+  if (@_) {
+    $self->{BUSINESS} = shift;
+  }
+  return $self->{BUSINESS};
+}
+
+sub system {
+  my $self = shift;
+
+  if (@_) {
+    $self->{SYSTEM} = shift;
+  }
+  return $self->{SYSTEM};
 }
 
 1;

@@ -1,4 +1,4 @@
-#!/usr/local/bin/perl
+#!/usr/local/bin/perl -w
 
 use strict;
 
@@ -6,13 +6,35 @@ use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('exasfaidmvnc:t:', \%opts);
+getopts('d?exasfaimvnp:t:', \%opts);
+
+if ($opts{'?'}) {
+  print STDERR <<EOT;
+Usage: class-list.pl [-sfm] [-ai] [-n] [-p <policy>] [-t <type>] [-ex]
+Options:
+  -s          List schedules for each policy
+  -f          List files for each policy
+  -m          List client members of each policy
+
+  -a          Only list active policies
+  -i          Only list in-active policies
+
+  -n          Restrict schedules to NetBackup schedules
+
+  -p          Match policies against argument (reg-exp)
+  -t          Restrict listing to policy type argument
+
+  -e          Explode policy/schedule/file/member attributes on each line
+  -x          XML output
+EOT
+
+  exit;
+}
 
 use NBU;
 NBU->debug($opts{'d'});
 
 NBU::Class->populate;
-
 
 sub printDetail {
   my $h = shift;
@@ -41,7 +63,7 @@ sub listSchedules {
 
   my $nextDetail = shift(@detail);
 
-  my @sl = $c->schedules;
+  my @sl = ($c->schedules, $c->policies);
 
   if ($opts{'n'}) {
     my @internal;
@@ -55,27 +77,60 @@ sub listSchedules {
   if (@sl) {
     for my $s (@sl) {
       my $scheduleName = $s->name;
+      my ($header, $footer);
+      if ($opts{'x'}) {
+	my $f = $s->frequency;
+	my ($minutes, $hours, $days, $weeks);
+	$minutes = $f % (60 * 60);
+	$hours = int($f / (60 * 60));
+	$days = int($hours / 24); $hours = $hours % 24;
+	$weeks = int($days / 7); $days = $days % 7;
+
+	my $frequency = "";  my $sep = "";
+	if ($weeks) {
+	  $frequency .= $sep."$weeks W";
+	  $sep = ";";
+	}
+	if ($days) {
+	  $frequency .= $sep."$days D";
+	  $sep = ";";
+	}
+	if ($hours) {
+	  $frequency .= $sep."$hours H";
+	  $sep = ";";
+	}
+	if ($minutes) {
+	  $frequency .= $sep."$minutes M";
+	  $sep = ";";
+	}
+
+	$header = "<schedule name=\"$scheduleName\" type=\"".$s->type."\" frequency=\"$frequency\">\n";
+	$footer = "</schedule>\n";
+      }
+      else {
+	$header = $scheduleName."\n";
+	$footer = "";
+      }
       if ($opts{'e'}) {
 	my $level = $prefix.'|'.$scheduleName;
-	my $header = $opts{'x'} ? "<schedule name=\"$scheduleName\">\n" : $scheduleName."\n";
-	my $footer = $opts{'x'} ? "</schedule>\n" : "";
 	if (defined($nextDetail)) {
-          $eCounter = &$nextDetail($c, $lastHeader.$header, $level, @detail)
+          $eCounter += &$nextDetail($c, $lastHeader.$header, $level, @detail)
 	}
 	else {
 	  printDetail($lastHeader.$header, $level);
 	  $eCounter += 1;
 	}
-	print $footer if ($eCounter);
       }
       else {
-        print $lastHeader.$prefix.$scheduleName;
+        print $lastHeader.$prefix.$header;
+	$eCounter += 1;
       }
+      print $footer if ($eCounter);
       $lastHeader = "";
     }
   }
   if (!$opts{'e'}) {
-    &$nextDetail($c, $lastHeader, $prefix."  ", @detail) if (defined($nextDetail));
+    $eCounter += &$nextDetail($c, $lastHeader, $prefix."  ", @detail) if (defined($nextDetail));
   }
   return $eCounter;
 }
@@ -95,27 +150,28 @@ sub listMembers {
   if (@cl) {
     for my $client (@cl) {
       my $clientName = $client->name;
+      my $header = $opts{'x'} ? "<client name=\"$clientName\">\n" : $clientName."\n";
+      my $footer = $opts{'x'} ? "</client>\n" : "";
       if ($opts{'e'}) {
 	my $level = $prefix.'|'.$clientName;
-	my $header = $opts{'x'} ? "<client name=\"$clientName\">\n" : $clientName."\n";
-	my $footer = $opts{'x'} ? "</client>\n" : "";
 	if (defined($nextDetail)) {
-          $eCounter = &$nextDetail($c, $lastHeader.$header, $level, @detail)
+          $eCounter += &$nextDetail($c, $lastHeader.$header, $level, @detail)
 	}
 	else {
 	  printDetail($lastHeader.$header, $level);
 	  $eCounter += 1;
 	}
-	print $footer if ($eCounter);
       }
       else {
-	print $lastHeader.$prefix.$clientName;
+	print $lastHeader.$prefix.$header;
+	$eCounter += 1;
       }
+      print $footer if ($eCounter);
       $lastHeader = "";
     }
   }
   if (!$opts{'e'}) {
-    &$nextDetail($c, $lastHeader, $prefix."  ", @detail) if (defined($nextDetail));
+    $eCounter += &$nextDetail($c, $lastHeader, $prefix."  ", @detail) if (defined($nextDetail));
   }
   return $eCounter;
 }
@@ -135,27 +191,28 @@ sub listFiles {
   if (@ifl) {
     for my $if (@ifl) {
       next if ($if eq "NEW_STREAM");
+      my $header = $opts{'x'} ? "<file path=\"$if\">\n" : $if."\n";
+      my $footer = $opts{'x'} ? "</file>\n" : "";
       if ($opts{'e'}) {
-	my $header = $opts{'x'} ? "<file path=\"$if\">\n" : $if."\n";
-	my $footer = $opts{'x'} ? "</file>\n" : "";
 	my $level = $prefix.'|'.$if;
 	if (defined($nextDetail)) {
-          $eCounter = &$nextDetail($c, $lastHeader.$header, $level, @detail)
+          $eCounter += &$nextDetail($c, $lastHeader.$header, $level, @detail)
 	}
 	else {
 	  printDetail($lastHeader.$header, $level);
 	  $eCounter += 1;
 	}
-	print $footer if ($eCounter);
       }
       else {
-	print $lastHeader.$prefix.$if;
+	print $lastHeader.$prefix.$header;
+	$eCounter += 1;
       }
+      print $footer if ($eCounter);
       $lastHeader = "";
     }
   }
   if (!$opts{'e'}) {
-    &$nextDetail($c, $lastHeader, $prefix."  ", @detail) if (defined($nextDetail));
+    $eCounter += &$nextDetail($c, $lastHeader, $prefix."  ", @detail) if (defined($nextDetail));
   }
   return $eCounter;
 }
@@ -164,10 +221,6 @@ my @detail;
 push @detail, \&listSchedules if ($opts{'s'});
 push @detail, \&listMembers if ($opts{'m'});
 push @detail, \&listFiles if ($opts{'f'});
-
-#
-# XML output is created using the '-e' logic
-$opts{'e'} = $opts{'x'} if ($opts{'x'});
 
 my @list;
 if ($#ARGV > -1 ) {
@@ -195,19 +248,29 @@ for my $c (@list) {
 
   next if (!$c->active && !(defined($opts{'a'}) || defined($opts{'i'})));
   next if ($c->active && defined($opts{'i'}));
-  next unless (!defined($opts{'c'}) || ($c->name =~ /$opts{'c'}/));
+  next unless (!defined($opts{'p'}) || ($c->name =~ /$opts{'p'}/));
   next unless (!defined($opts{'t'}) || ($c->type =~ /$opts{'t'}/));
 
   my $policyDescription = "";
   $policyDescription .=  $c->name;
-  $policyDescription .= ": ".$c->type if ($opts{'v'});
 
   my $eCounter = 0;
+  my ($header, $footer);
+  if ($opts{'x'}) {
+    $header = "<policy name=\"$policyDescription\"";
+    $header .= " type=\"".$c->type."\"";
+    $header .= " storage-unit=\"".$c->storageUnit->label."\"" if (defined($c->storageUnit));
+    $header .= ">\n";
+    $footer = "</policy>\n";
+  }
+  else {
+    $header = $policyDescription."\n";
+    $footer = "";
+  }
+
   if ($opts{'e'}) {
-    my $header = $opts{'x'} ? "<policy name=\"$policyDescription\">\n" : $policyDescription."\n";
-    my $footer = $opts{'x'} ? "</policy>\n" : "";
     if (defined($nextDetail)) {
-      $eCounter = &$nextDetail($c, $header, $policyDescription, @detail)
+      $eCounter += &$nextDetail($c, $header, $policyDescription, @detail)
     }
     else {
       printDetail($header, $policyDescription);
@@ -217,11 +280,13 @@ for my $c (@list) {
   }
   else {
     if (defined($nextDetail)) {
-      &$nextDetail($c, $policyDescription, "  ", @detail)
+      $eCounter += &$nextDetail($c, $header, "  ", @detail)
     }
     else {
-      print $policyDescription;
+      print $header;
+      $eCounter += 1;
     }
+    print $footer if ($eCounter);
   }
 }
 if ($opts{'x'}) {

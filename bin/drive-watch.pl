@@ -1,7 +1,6 @@
 #!/usr/local/bin/perl
 
 use strict;
-use lib '/usr/local/lib/perl5';
 
 use Getopt::Std;
 
