@@ -7,7 +7,7 @@ use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('seflvaAdrt:p:c:C:o:M:', \%opts);
+getopts('seflvaAdrt:p:c:o:C:O:M:', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -40,12 +40,23 @@ if ($opts{'p'}) {
 }
 
 
-sub sortOrder {
+sub sortByClient {
+  my $result;
+
+  $result = ($a->client->name cmp $b->client->name);
+  $result = ($b->id <=> $a->id) if ($result == 0);
+  return $result;
+}
+
+sub sortByID {
   my $result;
 
   $result = ($b->id <=> $a->id);
   return $result;
 }
+$opts{'o'} = 'id' if (!defined($opts{'o'}));
+my $sortOrder = ($opts{'o'} eq 'client') ? \&sortByClient : \&sortByID;
+
 
 my %stateCodes = (
   'active' => 'A',
@@ -91,17 +102,17 @@ my %activeClients;
 my $MBytes = 0;
 
 my @jl = NBU::Job->list;
-for my $job (sort sortOrder (@jl)) {
+for my $job (sort $sortOrder (@jl)) {
   next if (!$opts{'a'} && !$job->active);
   next if (!$opts{'A'} && ($job->start < $since));
 
   # Skip jobs of the wrong ilk
-  my $fits = !($opts{'t'} || $opts{'c'} || $opts{'C'} || $opts{'o'});
+  my $fits = !($opts{'t'} || $opts{'c'} || $opts{'C'} || $opts{'O'});
   if (!$fits) {
     $fits ||= (defined($job->class) && defined($job->class->type) && ($job->class->type =~ $opts{'t'})) if (!$fits && $opts{'t'});
     $fits ||= (defined($job->class) && ($job->class->name =~ $opts{'c'})) if (!$fits && $opts{'c'});
     $fits ||= (defined($job->client) && ($job->client->name =~ $opts{'C'})) if (!$fits && $opts{'C'});
-    $fits ||= (defined($job->client) && defined($job->client->os) && ($job->client->os =~ $opts{'o'})) if (!$fits && $opts{'o'});
+    $fits ||= (defined($job->client) && defined($job->client->os) && ($job->client->os =~ $opts{'O'})) if (!$fits && $opts{'O'});
   }
   next if (!$fits);
 
@@ -139,8 +150,10 @@ for my $job (sort sortOrder (@jl)) {
     if ($state eq "D") {
       printf(" %3d ", $job->status);
       if ($job->status == 0) {
-	$totalWritten += ($job->dataWritten / 1024);
-        $MBytes += $job->dataWritten / 1024;
+	if (defined($job->dataWritten)) {
+	  $totalWritten += ($job->dataWritten / 1024);
+	  $MBytes += $job->dataWritten / 1024;
+	}
       }
       print dispInterval($job->elapsedTime);
     }
@@ -150,10 +163,20 @@ for my $job (sort sortOrder (@jl)) {
     }
 
     if ($state ne "Q") {
-      printf(" %7d", $job->filesWritten);
-      printf(" %10d", $job->dataWritten);
+      if (defined($job->filesWritten)) {
+        printf(" %7d", $job->filesWritten);
+      }
+      else {
+	printf(" 7%s", "");
+      }
+      if (defined($job->dataWritten)) {
+        printf(" %10d", $job->dataWritten);
+      }
+      else {
+	printf(" 10%s", "");
+      }
       printf(" %.2f", ($job->dataWritten / $job->elapsedTime / 1024))
-	if ($job->elapsedTime);
+	if (($job->elapsedTime > 0) && defined($job->dataWritten));
 
       if (($state eq "A") && ($job->volume)) {
 	print " ".$job->volume->id;

@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.37 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.39 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -63,7 +63,7 @@ sub list {
   return @jobList;
 }
 
-my @jobTypes = ("immediate", "scheduled", "user");
+my @jobTypes = ("Backup", undef, "Restore", undef, undef, undef, "Catalog");
 my $asOf;
 my $fromFile = $ENV{"HOME"}."/.alljobs.allcolumns";
 my ($jobPipe, $refreshPipe);
@@ -174,7 +174,7 @@ sub parseJob {
 
     $job->start($started);
 
-    $job->type($jobTypes[$jobType]);
+    $job->type($jobTypes[$jobType]) if ($jobType ne "");
 
     $job->{STUNIT} = NBU::StorageUnit->byLabel($stUnit) if (defined($stUnit) && ($stUnit !~ /^[\s]*$/));
     my $backupID = $clientName."_".$started;
@@ -263,6 +263,10 @@ sub parseJob {
 	elsif ($msg =~ /end writing/) {
 	  $job->doneWriting($now);
 	}
+	elsif ($msg =~ /begin reading/) {
+	}
+	elsif ($msg =~ /end reading/) {
+	}
 	else {
 print "$jobID\:$i\: $msg\n";
 	}
@@ -276,16 +280,16 @@ print "$jobID\:$i\: $msg\n";
 
   if ($job->state eq "active") {
     $job->{CURRENTFILE} = $currentFile;
-    $job->{SIZE} = $KBytesWritten;
-    $job->{FILECOUNT} = $filesWritten;
-    $job->{OPERATION} = $operation;
-    $job->{ELAPSED} = $elapsed;
+    $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
+    $job->{FILECOUNT} = $filesWritten if ($filesWritten ne "");
+    $job->{OPERATION} = $operation if ($operation ne "");
+    $job->{ELAPSED} = $elapsed if ($elapsed ne "");
   }
   elsif ($job->state eq "done") {
-    $job->{SIZE} = $KBytesWritten;
-    $job->{FILECOUNT} = $filesWritten;
+    $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
+    $job->{FILECOUNT} = $filesWritten if ($filesWritten ne "");
     $job->stop($ended, $status);
-    $job->{ELAPSED} = $elapsed;
+    $job->{ELAPSED} = $elapsed if ($elapsed ne "");
   }
   
   return $job;
@@ -447,6 +451,16 @@ sub status {
   return $self->{STATUSCODE};
 }
 
+my %successCodes = (
+  0 => 1,
+  1 => 1,
+);
+sub success {
+  my $self = shift;
+
+  return exists($successCodes{$self->{STATUSCODE}});
+}
+
 sub errors {
   my $self = shift;
   my @errorList;
@@ -515,6 +529,17 @@ sub pushState {
     $states = $self->{STATES} = [];
     $times = $self->{TIMES} = [];
   }
+  #
+  # If the current state is the same as the last state we replace
+  # it rather than layering it.
+  elsif (defined(my $lastState = pop @$states)) {
+    if ($lastState eq $newState) {
+      $tm = pop @$times;
+    }
+    else {
+      push @$states, $lastState;
+    }
+  }
   push @$states, $newState;
   push @$times, $tm;
   $self->{STARTOP} = $tm;
@@ -526,10 +551,10 @@ sub popState {
   my $states = $self->{STATES};
   my $times = $self->{TIMES};
 
-  my $lastState = pop @$states;
-  $self->{$lastState} += ($tm - $self->{STARTOP});
-
-  $self->{STARTOP} = pop @$times;
+  if (defined(my $lastState = pop @$states)) {
+    $self->{$lastState} += ($tm - $self->{STARTOP});
+    $self->{STARTOP} = pop @$times;
+  }
 }
 
 sub volume {
@@ -570,16 +595,19 @@ sub mounted {
   my $tm = shift;
   my $drive = shift;
 
-  $self->popState($tm);
+  if (defined(my $volume = $self->{SELECTED})) {
+    $self->popState($tm);
 
-  my $volume = $self->{SELECTED};
+    my $mount = NBU::Mount->new($self, $volume, $drive, $tm);
 
-  my $mount = NBU::Mount->new($self, $volume, $drive, $tm);
+    my $mountListR = $self->{MOUNTLIST};
+    $$mountListR{$tm} = $mount;
 
-  my $mountListR = $self->{MOUNTLIST};
-  $$mountListR{$tm} = $mount;
-
-  return $self->mount($mount);
+    return $self->mount($mount);
+  }
+  else {
+    return undef;
+  }
 }
 
 sub startPositioning {
@@ -587,16 +615,24 @@ sub startPositioning {
   my $fileNumber = shift;
   my $tm = shift;
 
-  $self->pushState('POS', $tm);
-  $self->mount->startPositioning($fileNumber, $tm);
+  my $mount = $self->mount;
+  if (defined($mount)) {
+    $self->pushState('POS', $tm);
+    $self->mount->startPositioning($fileNumber, $tm);
+  }
+  return $mount;
 }
 
 sub positioned {
   my $self = shift;
   my $tm = shift;
 
-  $self->popState($tm);
-  $self->mount->positioned($tm);
+  my $mount = $self->mount;
+  if (defined($mount)) {
+    $self->popState($tm);
+    $self->mount->positioned($tm);
+  }
+  return $mount;
 }
 
 sub startWriting {
@@ -678,9 +714,12 @@ sub files {
 my %opCodes = (
   -1 => '---',
   25 => 'WAI',
+  2 =>  'CON',
   26 => 'CON',
+  0  => ' ? ',
   27 => 'MNT',
   29 => 'POS',
+  3  => 'WRI',
   35 => 'WRI',
 );
 
@@ -690,10 +729,14 @@ sub operation {
   return undef if ($self->state ne "active");
 
   if (@_) {
-    $self->{OPERATION} = shift;
+    my $opCode = shift;
+    $self->{OPERATION} = $opCode unless ($opCode == 0);
   }
   my $opCode;
-  if (!defined($opCode = $opCodes{$self->{OPERATION}})) {
+  if (!defined($self->{OPERATION})) {
+    return "---";
+  }
+  elsif (!defined($opCode = $opCodes{$self->{OPERATION}})) {
     $opCode = sprintf("%3d", $self->{OPERATION});
   }
 

@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.6 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.7 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -46,12 +46,11 @@ sub number {
 }
 
 #
-# Volume offset data is apaprently kept not in Kilobytes but in other units,
-# perhaps Megabytes?
+# Volume offset data is stored in blocks but reported back in KBytes
 sub offset {
   my $self = shift;
 
-  return ($self->{OFFSET} * 1024);
+  return (($self->{OFFSET} * $self->{BLOCKSIZE})/1024);
 }
 
 sub size {

@@ -73,7 +73,7 @@ for my $clientName (@ARGV) {
     print "\n";
     if ($opts{'f'}) {
       for my $f ($image->fragments) {
-	print "     ".$f->number.": File ".$f->fileNumber." on ".$f->volume->id." drive ".$f->driveWrittenOn."\n";
+	print "     ".$f->number.": File ".$f->fileNumber.", ".$f->size." on ".$f->volume->id." drive ".$f->driveWrittenOn."\n";
       }
     }
     if ($opts{'R'}) {

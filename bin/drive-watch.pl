@@ -7,7 +7,7 @@ use Getopt::Std;
 my $interval = 5 * 60;
 
 my %opts;
-getopts('di:n:', \%opts);
+getopts('dM:i:n:', \%opts);
 if (defined($opts{'i'})) {
   $interval = $opts{'i'};
 }
@@ -17,9 +17,20 @@ $notify .= ",".$opts{'n'} if ($opts{'n'});
 use NBU;
 NBU->debug($opts{'d'});
 
-foreach my $server (NBU->servers) {
-  NBU::Drive->populate($server);
+my $master;
+if ($opts{'M'}) {
+  $master = NBU::Host->new($opts{'M'});
 }
+else {
+  my @masters = NBU->masters;  $master = $masters[0];
+}
+my @mediaManagers;
+foreach my $server (NBU::StorageUnit->mediaServers($master)) {
+  if (NBU::Drive->populate($server)) {
+    push @mediaManagers, $server;
+  }
+}
+
 sub msg {
   my $self = shift;
   my $state = shift;
@@ -29,7 +40,7 @@ sub msg {
   my $down = 1;
   my $total = 0;
   for my $d (NBU::Drive->pool) {
-    next unless (defined($d->robot));
+    next unless ($d->known);
     $total++;
     $down++ if ($d->down);
   }
@@ -42,14 +53,15 @@ sub msg {
   close(PIPE);
 }
 
-foreach my $drive (NBU::Drive->pool) {
-  $drive->notifyOn("DOWN", \&msg);
+foreach my $d (NBU::Drive->pool) {
+  next unless $d->known;
+  $d->notifyOn("DOWN", \&msg);
 }
 
 while (1) {
   system("sleep $interval\n");
 
-  foreach my $server (NBU->servers) {
+  foreach my $server (@mediaManagers) {
     NBU::Drive->updateStatus($server);
   }
 }

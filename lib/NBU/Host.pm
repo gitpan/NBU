@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.19 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -92,7 +92,7 @@ sub loadClasses {
   NBU::Pool->populate;
 
   my $pipe = NBU->cmd("bpcllist -byclient ".$self->name." -l |");
-  NBU::Class->loadClasses($pipe, "CLIENT", $self->master);
+  NBU::Class->loadClasses($pipe, "CLIENT", $self->clientOf);
 
   close($pipe);
 }
@@ -248,7 +248,7 @@ sub loadCoverage {
     elsif ($loadOK && !(/^$/) && !(/   Exit status/)) {
       my ($mountPoint, @remainder) = split;
 
-      if ($self->os =~ /Solaris|linux/) {
+      if ($self->os =~ /[Ss]olaris|linux|hp10.20/) {
 	my ($deviceFile, $className, $status) = @remainder;
 
 	next if ($deviceFile !~ /^\//);

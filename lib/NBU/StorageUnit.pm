@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.13 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.14 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -64,7 +64,7 @@ sub populate {
   while (<$pipe>) {
     my ($label, $type, $hostName,
 	$robotType, $robotNumber, $density,
-	$numberOfDrives,
+	$count,
 	$maxFragmentSize,
 	$path,
 	$onDemand,
@@ -79,14 +79,20 @@ sub populate {
 
     $stu->{MASTER} = $targetMaster;
     $stu->{HOST} = NBU::Host->new($hostName);
-    $stu->{ROBOT} = NBU::Robot->new($robotNumber, $robotType, undef);
+
+    #
+    # If this is a robot storage unit, we inform the robot so it can know which storage units
+    # make use of its services.
+    if (defined(my $robot = $stu->{ROBOT} = NBU::Robot->new($robotNumber, $robotType, undef))) {
+      $robot->known($stu);
+    }
 
     if ($type == 1) {
-      $stu->{CONCURRENTJOBS} = $numberOfDrives;
+      $stu->{CONCURRENTJOBS} = $count;
       $stu->{PATH} = $path;
     }
     elsif ($type == 2) {
-      $stu->{DRIVECOUNT} = $numberOfDrives;
+      $stu->{DRIVECOUNT} = $count;
       $stu->{DENSITY} = $NBU::Media::densities{$density};
     }
 

@@ -192,10 +192,14 @@ sub menu {
     $help->refresh();
     $win->getch();
   }
+  else {
+    return 'r';
+  }
+
   $win->move(2, 0);  $win->clrtoeol();
   $win->refresh();
 
-  return 'r';
+  return ' ';
 }
 
 #
@@ -236,7 +240,7 @@ $hdr .= " ".sprintf("%7s", " JOBID ");
 $hdr .= " ".sprintf("%8s", "  START ");
 $hdr .= " ".sprintf("%3s", "OP ");
 $hdr .= " ".sprintf("%6s", "VOLUME");
-$hdr .= " ".sprintf("%9s", "  SIZE   ");
+$hdr .= " ".sprintf("%6s", " SIZE ");
 $hdr .= " ".sprintf("%4s", "SPD ");
 if ($opts{'r'}) {
   $hdr .= " ".sprintf("%8s", "  STU");
@@ -247,6 +251,7 @@ else {
 
 while (!$passLimit || ($refreshCounter <= $passLimit)) {
   my $jobCount = 0;
+  my $queueCount = 0;  my $doneCount = 0;
   my $totalSpeed = 0;
   my $totalWireSpeed = 0;
   my @jl = NBU::Job->list;
@@ -257,7 +262,11 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
   # in one fell swoop.
   $win->addstr(3, 1, $hdr);
   for my $job (sort $sortOrder (@jl)) {
-    next unless ($job->active);
+    if (!$job->active) {
+      $queueCount += 1 if ($job->queued);
+      $doneCount += 1 if ($job->done);
+      next;
+    }
 
 
     my $who = sprintf("%15s", $job->client->name);
@@ -281,7 +290,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
     my $speed;
     if (defined($job->volume)) {
       $jobDescription .= " ".$job->volume->id;
-      $jobDescription .= " ".sprintf("%9.2f", ($job->dataWritten/1024));
+      $jobDescription .= " ".sprintf("%6d", int($job->dataWritten/1024));
       $jobDescription .= " ".sprintf("%.2f", $speed = ($job->dataWritten / $job->elapsedTime / 1024))
 	if ($job->elapsedTime);
 
@@ -313,12 +322,12 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
   my $total = 0;
   if (!$opts{'r'}) {
     for my $d (NBU::Drive->pool) {
-#      next unless (defined($d->robot));
+      next unless ($d->known);
       $total++;
       $down++ if ($d->down);
     }
   }
-  $win->addstr(0, 0, "Pass $refreshCounter; $jobCount active jobs; Drives: $down down out of $total");
+  $win->addstr(0, 0, "Pass $refreshCounter; $jobCount active jobs, $queueCount queued jobs; Drives: $down down out of $total");
   $refreshCounter++;
   my $timestamp = localtime;
   $win->addstr(0, $COLS-length($timestamp), $timestamp);
@@ -343,18 +352,27 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 
   last if ($answer eq 'q');
 
-  if ($answer ne 'r') {
+  if ($answer eq 'c') {
+    # Choose which job to cancel
+  }
+  elsif ($answer ne 'r') {
     $answer = menu($answer, $win);
   }
 
-  $win->addstr(2, 0, "Refreshing...");  $win->refresh();
-  if (!$opts{'r'}) {
-    foreach my $server (NBU::StorageUnit->mediaServers($master)) {
-      NBU::Drive->updateStatus($server);
+  if ($answer eq 'r') {
+    $win->addstr(2, 0, "Refreshing...");  $win->refresh();
+
+    #
+    # If we're not doing a 'r'eplay, fetch the current status of the drives
+    # in the storage units so we can correlate the jobs to them.
+    if (!$opts{'r'}) {
+      foreach my $server (NBU::StorageUnit->mediaServers($master)) {
+	NBU::Drive->updateStatus($server);
+      }
     }
-  }
-  if (!defined(NBU::Job->refreshJobs($master))) {
-    last;
+    if (!defined(NBU::Job->refreshJobs($master))) {
+      last;
+    }
   }
 
   $win->clear;

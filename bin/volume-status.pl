@@ -128,3 +128,44 @@ while (<STDIN>) {
     $volume->freeze;
   }
 }
+
+=head1 NAME
+
+volume-status.pl - A NetBackup volume attribute analysis tool
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Any media server platform supported by NetBackup
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<volume-list.pl|volume-list.pl>
+
+=item L<toc.pl|toc.pl>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002 Paul Winkeler
+
+=cut

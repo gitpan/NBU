@@ -17,7 +17,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -147,28 +147,28 @@ sub loadClasses {
       $class->{MDS} = $multipleDataStreams;
       next;
     }
-    if (/^KEY/) {
+    if (/^KEY /) {
       my ($tag, @keys) = split;;
       $class->{KEYS} = \@keys unless ($keys[0] eq "*NULL*");
       next;
     }
-    if (/^BCMD/) {
+    if (/^BCMD /) {
       next;
     }
-    if (/^RCMD/) {
+    if (/^RCMD /) {
       next;
     }
-    if (/^RES/) {
+    if (/^RES /) {
       my ($tag, @residences) = split;
       $class->{RESIDENCE} = $residences[0] unless ($residences[0] eq "*NULL*");
       next;
     }
-    if (/^POOL/) {
+    if (/^POOL /) {
       my ($tag, @pools) = split;
       $class->{POOL} = NBU::Pool->byName($pools[0]) unless ($pools[0] eq "*NULL*");
       next;
     }
-    if (/^CLIENT/) {
+    if (/^CLIENT /) {
       my ($tag, $name, $platform, $os) = split;
       my $client = NBU::Host->new($name);
       $class->loadClient($client);
@@ -176,17 +176,17 @@ sub loadClasses {
       $client->enrolled if ($focus =~ /CLIENT|ALL/);
       next;
     }
-    if (/^INCLUDE/) {
+    if (/^INCLUDE /) {
       my ($tag, $path) = split(/[\s]+/, $_, 2);
       $class->include($path);
       next;
     }
-    if (/^EXCLUDE/) {
+    if (/^EXCLUDE /) {
       my ($tag, $path) = split(/[\s]+/, $_, 2);
       $class->exclude($path);
       next;
     }
-    if (/^SCHED/) {
+    if (/^SCHED /) {
       my ($tag, $name, $type, @schedAttr) = split;
       $schedule = $class->loadSchedule(NBU::Schedule->new($class, $name, $type, $pipe, @schedAttr));
       next;
@@ -243,6 +243,7 @@ sub loadSchedule {
   my $newSchedule = shift;
   my $listR;
 
+print "Policy ".$self->name." has undefined schedule?\n" if (!defined($newSchedule));
   if ($self->policyAware && ($newSchedule->type eq "UBAK")) {
     if (!defined($self->{POLICIES})) {
       $self->{POLICIES} = [];

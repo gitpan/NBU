@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.5 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.6 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -107,11 +107,22 @@ sub list {
   return (values %poolIDs);
 }
 
+my %post;
 sub scratch {
   my $proto = shift;
 
-  for my $p ($proto->list) {
-    return $p if ($p->name =~ /scratch/i);
+  my @masters = NBU->masters;  my $master = $masters[0];
+  if (!exists($post{$master->name})) {
+    die "Could not open pool pipe\n" unless my $pipe = NBU->cmd("vmpool -h ".$master->name." -listscratch |");
+    <$pipe>;
+    while (<$pipe>) {
+      chop;
+      next if (/^=================/);
+      $post{$master->name} = $_;
+    }
+  }
+  if (defined(my $name = $post{$master->name})) {
+    return $proto->byName($name);
   }
   return undef;
 }

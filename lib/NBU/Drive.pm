@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.17 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.18 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -92,7 +92,8 @@ sub populate {
       chop $comment;
 
       my $drive = NBU::Drive->byIndex($index, $server);
-      if (my $robot = NBU::Robot->new($robotNumber, $robotType)) {
+      if ($robotType ne "-") {
+        my $robot = NBU::Robot->new($robotNumber, $robotType);
         $drive->{ROBOT} = $robot;  $robot->controlDrive($drive);
       }
       $drive->{HOST} = $server;
@@ -140,6 +141,21 @@ sub loadDriveDetail {
   }
 
   return $detailed;
+}
+
+#
+# Here known refers to whether the drive is known to NetBackup, i.e. whether
+# it is part of a storage unit definition and thus could be used for backups.
+sub known {
+  my $self = shift;
+
+  if (defined(my $stu = $self->{STU})) {
+    return ($stu);
+  }
+  elsif (defined(my $robot = $self->robot)) {
+    return ($robot->known);
+  }
+  return ();
 }
 
 sub updateStatus {

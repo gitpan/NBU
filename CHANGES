@@ -1,3 +1,12 @@
+For release 0.85
+Some minor fixes and updates for NBU 4.5 compatibility
+- Handle multiplexed fragments when computing a volume's TOC
+- Properly code job types
+- 4.5.0 recognized in robot inventorying logic
+- drives and robots now track whether they're known to any storage units;
+ this allows one to identify equipment currently in use by NetBackup or not.
+- Scratch pools identified via -listscratch
+- Fix bug in job parsing when tapes are positioning before they're mounted
 For release 0.75
 This release builds on its predecessors by fleshing out more and more functionality
 as user (my) needs warrant.  Lately these have been focussed on two areas in

@@ -17,7 +17,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.28 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.31 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -247,8 +247,8 @@ sub populate {
     $volume->{PREVIOUSPOOL} = NBU::Pool->byName($previousVolumePool);
 
     $volume->{OFFSITELOCATION} = $offsiteLocation unless ($offsiteLocation eq "-");
-    $volume->{OFFSITESLOT} = $offsiteSlot unless ($offsiteSlot == 0);
-    $volume->{OFFSITESESSIONID} = $offsiteSessionID unless ($offsiteSessionID == 0);
+    $volume->{OFFSITESLOT} = $offsiteSlot unless (($offsiteSlot eq "-") || ($offsiteSlot == 0));
+    $volume->{OFFSITESESSIONID} = $offsiteSessionID unless (($offsiteSessionID eq "-") || ($offsiteSessionID == 0));
 
     my $rd = $offsiteReturnDate." ".$offsiteReturnTime;  $rd = str2time($rd);
     $volume->{OFFSITERETURN} = $rd if (defined($rd));
@@ -390,7 +390,7 @@ sub group {
       NBU->cmd("vmchange".
 	      " -h ".$master->name.
 	      " -m ".$self->id.
-	      " -new_v ".(defined($group) ? $group : "-"), 0);
+	      " -new_v ".(defined($group) ? $group : "---"), 0);
       $self->{GROUP} = $group;
     }
   }
@@ -412,8 +412,39 @@ sub type {
 
 sub logError {
   my $self = shift;
+  my ($eDate, $eType) = @_;
+  $eDate = str2time($eDate);
+
+  if (!defined($self->{ERRORHIST})) {
+    $self->{ERRORHIST} = {};
+  }
+  my $ehR = $self->{ERRORHIST};
+  $$ehR{$eDate} = $eType;
+
+  $self->{LASTERRORDATE} = $eDate;
+  $self->{LASTERRORTYPE} = $eType;
 
   return $self->{ERRORCOUNT} += 1;
+}
+
+sub lastError {
+  my $self = shift;
+
+  if ($self->{ERRORCOUNT} > 0) {
+    return ($self->{LASTERRORDATE}, $self->{LASTERRORTYPE});
+  }
+  else {
+    return (0, undef);
+  }
+}
+
+sub errorList {
+  my $self = shift;
+  if (!defined($self->{ERRORHIST})) {
+    $self->{ERRORHIST} = {};
+  }
+  my $ehR = $self->{ERRORHIST};
+  return %$ehR;
 }
 
 sub errorCount {
@@ -759,6 +790,12 @@ sub unsuspend {
   return $self;
 }
 
+sub multipleRetentions {
+  my $self = shift;
+
+  return $self->{STATUS} & 0x40;
+}
+
 sub imported {
   my $self = shift;
 
@@ -819,6 +856,31 @@ sub offsiteReturnDate {
     }
   }
   return $self->{OFFSITERETURN};
+}
+
+sub offsiteSentDate {
+  my $self = shift;
+
+  if (@_) {
+    my $offsiteSentDate = shift;
+    my $update;
+
+    if (defined($offsiteSentDate)) {
+      $update = !defined($self->{OFFSITESENT}) || ($offsiteSentDate ne $self->{OFFSITESENT});
+    }
+    else {
+      $update = defined($self->{OFFSITESENT});
+    }
+    if ($update) {
+      my @masters = NBU->masters;  my $master = $masters[0];
+      NBU->cmd("vmchange".
+	      " -h ".$master->name.
+	      " -m ".$self->id.
+	      " -offsent ".(defined($offsiteSentDate) ? NBU->date($offsiteSentDate) : "0"), 0);
+      $self->{OFFSITESENT} = $offsiteSentDate;
+    }
+  }
+  return $self->{OFFSITESENT};
 }
 
 sub offsiteLocation {
@@ -930,7 +992,9 @@ sub insertFragment {
 
   my $toc = $self->{TOC};
 
-  $$toc[$index] = $fragment;
+  $$toc[$index] = [] if (!defined($$toc[$index]));
+  my $mpxList = $$toc[$index];
+  push @$mpxList, $fragment;
 }
 
 #

@@ -33,7 +33,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.30 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.32 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -135,7 +135,7 @@ my %cmdList = (
   vmglob => $sudo."${MMdir}${PS}bin${PS}vmglob",
 );
 
-my $vmchangeDelay = 3;
+my $vmchangeDelay = 1;
 my $lastChange = 0;
 
 my $pipeNames = "PIPE00";
@@ -235,7 +235,7 @@ sub loadClusterInformation {
       my $server = NBU::Host->new($serverName);
       push @servers, $server;
     }
-    if (/KNOWN_MASTER = ([\S]+)/) {
+    if (/KNOWN_MASTER = ([^\s,]+)/) {
       my $serverName = $1;
       my $server = NBU::Host->new($serverName);
       push @knownMasters, $server

@@ -1,12 +1,13 @@
 #!/usr/local/bin/perl
 
-use strict;
+#use strict;
 
 use Getopt::Std;
 use Time::Local;
+use POSIX qw(strftime);
 
 my %opts;
-getopts('duUaAfFe:m:', \%opts);
+getopts('dcuUaAfFe:m:', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -45,24 +46,45 @@ sub levelStatusSort {
   return $a->allocated <=> $b->allocated;
 }
 
+my $csv, $io;
+if ($opts{'c'}) {
+  eval "use Text::CSV_XS";
+  $csv = Text::CSV_XS->new();
+
+  my @heading = ('ID', 'pool', 'group', 'allocated', 'return-date');
+  $csv->combine(@heading);
+  print $csv->string."\n";
+}
+
 my @list = NBU::Media->list;
 for my $m (sort levelStatusSort @list) {
 
 #print STDERR "Trouble: ".$m->id." does not equal ".$m->barcode."\n" if ($m->id ne $m->barcode);
 
-  print $m->id
-        .": ".($m->robot ? $m->robot->id : " ")
-        .": ".$m->type
-        .": ".(defined($m->pool) ? $m->pool->name : "NONE")
-        .": ".(defined($m->group) ? $m->group : "NONE")
-        .($m->allocated ? ": Allocated ".substr(localtime($m->allocated), 4).": rl ".$m->retention->level : "")
-	.($m->mpx ? ": Multiplexed" : "")
-#	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
-	;
-  if (defined($m->offsiteLocation)) {
-    print " at ".$m->offsiteLocation."/".(defined($m->offsiteSlot) ? sprintf("%4d", $m->offsiteSlot) : "????");
-    print " return ".substr(localtime($m->offsiteReturnDate), 4);
+  if ($opts{'c'}) {
+    $csv->combine($m->id,
+      (defined($m->pool) ? $m->pool->name : "NONE"),
+      (defined($m->group) ? $m->group : "NONE"),
+      ($m->allocated ? strftime("%D %R", localtime($m->allocated)) : ""),
+      (defined($m->offsiteLocation) ? strftime("%D %R", localtime($m->offsiteReturnDate)) : ""),
+    );
+    print $csv->string;
   }
-  print ": Frozen" if ($m->frozen);
+  else {
+    print $m->id
+	  .": ".($m->robot ? $m->robot->id : " ")
+	  .": ".$m->type
+	  .": ".(defined($m->pool) ? $m->pool->name : "NONE")
+	  .": ".(defined($m->group) ? $m->group : "NONE")
+	  .($m->allocated ? ": Allocated ".substr(localtime($m->allocated), 4).": rl ".$m->retention->level : "")
+	  .($m->mpx ? ": Multiplexed" : "")
+  #	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
+	  ;
+    if (defined($m->offsiteLocation)) {
+      print " at ".$m->offsiteLocation."/".(defined($m->offsiteSlot) ? sprintf("%4d", $m->offsiteSlot) : "????");
+      print " return ".substr(localtime($m->offsiteReturnDate), 4);
+    }
+    print ": Frozen" if ($m->frozen);
+  }
   print "\n";
 }

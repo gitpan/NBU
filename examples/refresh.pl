@@ -10,7 +10,7 @@ use Date::Parse;
 use NBU;
 
 my %opts;
-getopts('vtdw:c:s:', \%opts);
+getopts('vftdw:c:s:', \%opts);
 
 my $window = defined($opts{'w'}) ? $opts{'w'} : 10;
 my $controlSize = defined($opts{'c'}) ? $opts{'c'} : 5 * 1024;
@@ -40,7 +40,7 @@ print "Using split target of ".localtime($splitTime)."\n" if (!$opts{'t'});
 my $targetInstance = $ARGV[0];
 my $targetClass = NBU::Class->byName("NBU".$targetInstance);
 if (!defined($targetClass)) {
-  print STDERR "refresh.pl: No such class as \"".$ARGV[0]."\"\n";
+  print STDERR "refresh.pl: No such SAP-INSTANCE as \"".$ARGV[0]."\"\n";
   exit -1;
 }
 elsif ($targetClass->type !~ /SAP/) {
@@ -174,10 +174,10 @@ if (!defined($postSafety) || !defined($priorSafety)) {
     if (!defined($priorSafety));
   print STDERR "refresh.pl: No extra safety archive log backup after ".localtime($splitTime)." found\n"
     if (!defined($postSafety));
-  exit -1;
+  exit -1 unless ($opts{'f'});
 }
-push @targets, $priorSafety;
-push @targets, $postSafety;
+push @targets, $priorSafety if (defined($priorSafety));
+push @targets, $postSafety if (defined($postSafety));
 
 my %needed;
 print "Backup images needed for this split are:\n" if (!$opts{'t'});

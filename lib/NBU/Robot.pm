@@ -13,7 +13,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw(%robotLevel);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.15 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.17 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%robotLevel);
   @EXPORT_OK =   qw();
@@ -62,7 +62,6 @@ sub new {
       $robot->{TYPE} = $type;
     }
 
-
     if ($farm[$id]) {
       $robot =  $farm[$id];
     }
@@ -75,6 +74,7 @@ sub new {
       $robot->{MAILSLOTSIZE} = 14;
       $robot->{SLOTS} = {};
       $robot->{DRIVES} = [];
+      $robot->{KNOWNTO} = [];
     }
 
     if (defined(my $hostName = shift)) {
@@ -102,7 +102,13 @@ sub populate {
   if ($self->host->NBUVersion eq "3.2.0") {
     while (<$pipe>) {
       if (/^Slot = [\s]*([\d]+), Barcode = ([\S]+)$/) {
-	$self->insert($1, NBU::Media->byBarcode($2));
+	if (defined(my $volume = NBU::Media->byBarcode($2))) {
+	  $self->insert($1, $volume);
+	}
+	else {
+	  print STDERR "Unknown barcode $2 in slot $1 of robot ".$self->id."\n";
+	  $self->empty($1);
+	}
 	$lastSlot = $1;
       }
       elsif (/^Slot = [\s]*([\d]+), <EMPTY>/) {
@@ -114,13 +120,19 @@ sub populate {
       }
     }
   }
-  elsif ($self->host->NBUVersion eq "3.4.0") {
+  elsif (($self->host->NBUVersion eq "3.4.0") || ($self->host->NBUVersion eq "4.5.0")) {
     while (<$pipe>) {
       last if (/^===/);
     }
     while (<$pipe>) {
       if (/^[\s]*([\d]+)[\s]+[\S]+[\s]+([\S]+)/) {
-	$self->insert($1, NBU::Media->byBarcode($2));
+	if (defined(my $volume = NBU::Media->byBarcode($2))) {
+	  $self->insert($1, $volume);
+	}
+	else {
+	  print STDERR "Unknown barcode $2 in slot $1 of robot ".$self->id."\n";
+	  $self->empty($1);
+	}
 	$lastSlot = $1;
       }
       elsif (/^[\s]*([\d]+)[\s]+No/) {
@@ -181,6 +193,22 @@ sub drives {
 
   my $driveList = $self->{DRIVES};
   return @$driveList;
+}
+
+#
+# Robots are accessed through storage units.  Every time a new robotic
+# storage unit is defined, the robot in question is informed of this by
+# a call to the known method.
+# Without arguments a list of storage units using the robot is returned.
+sub known {
+  my $self = shift;
+
+  my $stuList = $self->{KNOWNTO};
+  if (@_) {
+    my $stu = shift;
+    push @$stuList, $stu;
+  }
+  return @$stuList;
 }
 
 sub insert {

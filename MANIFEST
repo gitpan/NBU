@@ -40,6 +40,6 @@ examples/statistics.pl
 examples/stu.pl
 examples/toc.pl
 examples/volume-list.pl
-examples/volume-status.pl
+bin/volume-status.pl
 examples/volume-use.pl
 conf/robot.conf
