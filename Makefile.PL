@@ -3,7 +3,16 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.90',
+            'VERSION'         => '0.91',
+	    'PREREQ_PM' => { 
+	      Getopt::Std           => undef,
+	      IPC::Open2            => undef,
+	      Date::Parse           => undef,
+	      Time::Local           => undef,
+	      Curses                => undef,
+	      XML::XPath::XMLParser => undef,
+	      XML::XPath            => undef,
+	    },
 
             'EXE_FILES'       => [
                'bin/coverage.pl',
@@ -14,13 +23,16 @@ my %args = (
                'bin/js.pl',
                'bin/volume-status.pl',
                'bin/volume-list.pl',
-               'bin/backup-stats.pl',
                'bin/scratch.pl',
                'bin/refresh.pl',
                'bin/toc.pl',
-               'bin/class-list.pl',
+               'bin/policy-list.pl',
+               'bin/policy-space.pl',
 	       'bin/vu.pl',
 	       'bin/sla.pl',
+	       'bin/volume-use.pl',
+	       'bin/robot-status.pl',
+	       'bin/client-list.pl',
             ],
             
             dist              => {

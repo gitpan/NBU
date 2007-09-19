@@ -7,11 +7,11 @@ use Getopt::Std;
 use NBU;
 
 my %opts;
-getopts('?vnbadfRc:', \%opts);
+getopts('?vnbadfRl:c:', \%opts);
 
 if ($opts{'?'}) {
   print <<EOT;
-history.pl [-a] [-f] [-R] [-c <class-regexp>] <client-name>
+history.pl [-a] [-f] [-R [-l <levels>]] [-c <class-regexp>] <client-name>
 EOT
   exit 0;
 }
@@ -73,10 +73,11 @@ for my $clientName (@ARGV) {
     print "\n";
     if ($opts{'f'}) {
       for my $f ($image->fragments) {
-	print "     ".$f->number.": File ".$f->fileNumber.", ".$f->size." on ".$f->volume->id." drive ".$f->driveWrittenOn."\n";
+	print "     ".$f->number.": File ".$f->fileNumber.", ".$f->size." on ".$f->volume->id." drive ".$f->driveWrittenOn." of ".$f->volume->mmdbHost->name."\n";
       }
     }
     if ($opts{'R'}) {
+      $image->fileRecursionDepth($opts{'l'}) if (defined($opts{'l'}));
       for my $f ($image->fileList) {
 	print "      $f\n";
       }
@@ -126,6 +127,12 @@ this option is a convenient way to get at the list of tapes used by each image.
 =item L<-R|-R>
 
 Recursively list out all the files backed up as part of this image.
+
+=item L<-l depth|-ldepth>
+
+By default file recursion depth is set to 1.  This means that path list entries that explictly
+start at a depth already greater than 1, will not show at all!  Setting the depth to large values
+will result in very long listings.
 
 =item L<-c pattern|-cpattern>
 

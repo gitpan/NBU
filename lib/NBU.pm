@@ -18,6 +18,7 @@ use Carp;
 use NBU::Class;
 use NBU::Retention;
 use NBU::Media;
+use NBU::File;
 use NBU::Pool;
 use NBU::Image;
 use NBU::Fragment;
@@ -33,7 +34,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.32 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.36 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -51,6 +52,8 @@ my $MMdir;
 # Determine the path to the top of the NetBackup binaries
 if (exists($ENV{"WINDIR"})) {
 
+  $sudo = "";
+
   $PS = "\\";
 
   require Win32::TieRegistry || die "Cannot require Win32::TieRegistry!";
@@ -65,13 +68,21 @@ if (exists($ENV{"WINDIR"})) {
 
   my($PATHS) = "HKEY_LOCAL_MACHINE\\SOFTWARE\\VERITAS\\NetBackup\\CurrentVersion\\Paths";
 
-  $NBdir = $Registry->{ $PATHS . "\\_ov_fs"       } . "\\" .
-           $Registry->{ $PATHS . "\\SM_DIR"       } . "\\" .
-	   $Registry->{ $PATHS . "\\BP_DIR_NAME"  };
+  $PS = $_ps = $Registry->{ $PATHS . "\\_ps" };
 
-  $MMdir =  $Registry->{ $PATHS . "\\_ov_fs"       } . "\\" .
-	    $Registry->{ $PATHS . "\\SM_DIR"       } . "\\" .
+  $NBdir = $Registry->{ $PATHS . "\\_ov_fs"       } . "\\\\" .
+           $Registry->{ $PATHS . "\\SM_DIR"       } . "\\\\" .
+	   $Registry->{ $PATHS . "\\BP_DIR_NAME"  };
+  $NBdir =~ s/\$\{_ps\}/$PS/g;
+  $NBdir =~ s/ /\\ /g;
+  $NBdir =~ s/([a-zA-Z]):/\/cygdrive\/$1/;
+
+  $MMdir =  $Registry->{ $PATHS . "\\_ov_fs"       } . "\\\\" .
+	    $Registry->{ $PATHS . "\\SM_DIR"       } . "\\\\" .
 	    $Registry->{ $PATHS . "\\VM_DIR_NAME"  };
+  $MMdir =~ s/\$\{_ps\}/$PS/g;
+  $MMdir =~ s/ /\\ /g;
+  $MMdir =~ s/([a-zA-Z]):/\/cygdrive\/$1/;
 }
 else {
   if (-e ($NBP = "/usr/openv")) {
@@ -82,7 +93,7 @@ else {
     #
     # If we can execute them as is great, else insert sudo
     $sudo = "";
-    if (!-x $NBP."/volmgr/bin/vmoprcmd")  {
+    if ((!-x $NBP."/volmgr/bin/vmoprcmd") || (system($NBP."/volmgr/bin/vmoprcmd >/dev/null 2>&1") != 0)) {
       if (-x "/usr/local/bin/sudo") {
         $sudo = "/usr/local/bin/sudo ";
       }
@@ -93,6 +104,29 @@ else {
   }
   else {
     die "Expected NetBackup installation at $NBP\n";
+  }
+}
+
+my $configFile = "/usr/local/etc/NBU-conf.xml";
+my @XMLModules = ( "XML::XPath", "XML::XPath::XMLParser");
+my $NBUConfigXP;
+if (-f $configFile) {
+  foreach my $m (@XMLModules) {
+    eval "use $m;";
+  }
+  eval { $NBUConfigXP = XML::XPath->new(filename => $configFile); };
+
+  if (!defined($NBUConfigXP)) {
+    print STDERR "Ignoring configuration file $configFile due to XML loading errors\n";
+  }
+  else {
+    my $nodeset = $NBUConfigXP->find('//host-information/server');
+    foreach my $server ($nodeset->get_nodelist) {
+      my $name = $server->getAttribute('name');
+      my $canonicalName = $server->getAttribute('canonical');
+
+      NBU::Host->loadAlias($name, $canonicalName);
+    }
   }
 }
 
@@ -143,7 +177,7 @@ sub cmd {
   my $proto = shift;
   my $cmdline = shift;
   my $biDirectional;
-  my $quash = " 2> /dev/null ";
+  my $quash = exists($ENV{"WINDIR"}) ? "" : " 2> /dev/null ";
 
   my $originalCmdline = $cmdline;
   #

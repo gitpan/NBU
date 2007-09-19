@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.2 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -24,6 +24,7 @@ BEGIN {
 my %legit;
 my %licenses;
 my %featureDescriptions;
+my %productDescriptions;
 
 sub new {
   my $proto = shift;
@@ -74,7 +75,7 @@ sub populate {
     my $l;
     my ($baseKey, $key);
     while (<$pipe>) {
-      chop;
+      chop; s/[\s]*$//;
       if (/^[\S]+/) {
 	($baseKey, $key) = split;
 	$l = $proto->new($master, $key, $baseKey);
@@ -93,7 +94,10 @@ sub populate {
 	next;
       }
       if (/^  product ID[\s]+= ([\S]+) (.*)$/) {
-	$l->{PRODUCT} = $1;
+	my $id = $1;
+	my $description = $2;
+	$l->{PRODUCT} = $id;
+	$productDescriptions{$id} = $description;
 	next;
       }
       if (/^  serial number[\s]+= ([\S]+)$/) {
@@ -197,6 +201,12 @@ sub type {
   return $self->{TYPE};
 }
 
+sub serverTier {
+  my $self = shift;
+
+  return $self->{SERVERTIER};
+}
+
 sub expiration {
   my $self = shift;
 
@@ -268,6 +278,13 @@ sub licensesForFeature {
     }
   }
   return (values %list);
+}
+
+sub productDescription {
+  my $proto = shift;
+  my $productCode = shift;
+
+  return $productDescriptions{$productCode};
 }
 
 sub featureDescription {

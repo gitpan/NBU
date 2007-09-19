@@ -17,14 +17,15 @@ use Curses;
 my $program = $0;  $program =~ s /^.*\/([^\/]+)$/$1/;
 
 my %opts;
-getopts('d?ivlrs:p:M:', \%opts);
+getopts('d?ievlrs:p:M:', \%opts);
 
 if ($opts{'?'}) {
   print STDERR <<EOT;
-Usage: nbutop.pl [-v] [-i] [-r|-l] [-s <interval>] [-p <limit>] [-M <master>]
+Usage: nbutop.pl [-v] [-i] [-e] [-r|-l] [-s <interval>] [-p <limit>] [-M <master>]
 Options:
   -v       Verbose policy listing
   -i       Instantaneous throughput (instead of cumulative)
+  -e       Elapsed time (instead of starting time)
 
   -r       Replay previous job monitoring session
   -l       Log this monitoring session
@@ -43,6 +44,7 @@ if (defined($opts{'s'})) {
 }
 
 my $instant = $opts{'i'};
+my $elapsed = $opts{'e'};
 
 my $passLimit = $opts{'p'};
 my $refreshCounter = 0;
@@ -238,7 +240,7 @@ sub menu {
 # Gather first round of drive data if we're running live
 if (!$opts{'r'}) {
   foreach my $server (NBU::StorageUnit->mediaServers($master)) {
-    NBU::Drive->populate($server);
+    NBU::Drive->populate($server) if ($server->mediaManager());
   }
 }
 
@@ -260,8 +262,9 @@ local $SIG{WINCH} = sub {
   $win->refresh()
 };
 
+my $CLIENTWIDTH = 25;
 
-my $hdr = sprintf("%15s", "CLIENT    ");
+my $hdr = sprintf("%${CLIENTWIDTH}s", "CLIENT    ");
 if ($opts{'v'}) {
   $hdr .= " ".sprintf("%-40s", "             CLASS/SCHEDULE");
 }
@@ -269,7 +272,7 @@ else {
   $hdr .= " ".sprintf("%-23s", "         CLASS");
 }
 $hdr .= " ".sprintf("%7s", " JOBID ");
-$hdr .= " ".sprintf("%8s", "  START ");
+$hdr .= " ".sprintf("%8s", "  TIME  ");
 $hdr .= " ".sprintf("%3s", "OP ");
 $hdr .= " ".sprintf("%6s", "VOLUME");
 $hdr .= " ".sprintf("%6s", " SIZE ");
@@ -301,7 +304,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
     }
 
 
-    my $who = sprintf("%15s", $job->client->name);
+    my $who = sprintf("%${CLIENTWIDTH}s", $job->client->name);
 
     my $classID = $job->class->name;
     my $classIDlength = 23;
@@ -313,11 +316,18 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 
     my $jid = sprintf("%7u", $job->id);
 
-    my $startTime = ((time - $job->start) < (24 * 60 * 60)) ?
+    my $displayTime;
+    if ($elapsed) {
+	$displayTime = dispInterval(time - $job->start);
+    }
+    else {
+      my $startTime = ((time - $job->start) < (24 * 60 * 60)) ?
 	  substr(localtime($job->start), 11, 8) :
 	  " ".substr(localtime($job->start), 4, 6)." ";
+      $displayTime = $startTime;
+    }
 
-    my $jobDescription = "$who $classID $jid $startTime ".$job->operation;
+    my $jobDescription = "$who $classID $jid $displayTime ".$job->operation;
 
     my $speed;
     if (defined($job->volume)) {
@@ -349,7 +359,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
     if (defined($speed)) {
 
       $totalSpeed += $speed;
-      $totalWireSpeed += $speed if ($job->mediaServer != $job->client);
+      $totalWireSpeed += $speed if ($job->mediaServer->IPaddress ne $job->client->IPaddress);
 
       if ($job->dataWritten > (30 * 1024)) {
 	$alert |= ($job->class->name eq "NBUPR2") && ($speed < 5);
@@ -410,7 +420,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
     # in the storage units so we can correlate the jobs to them.
     if (!$opts{'r'}) {
       foreach my $server (NBU::StorageUnit->mediaServers($master)) {
-	NBU::Drive->updateStatus($server);
+	NBU::Drive->updateStatus($server) if ($server->mediaManager());
       }
     }
     if (!defined(NBU::Job->refreshJobs($master))) {

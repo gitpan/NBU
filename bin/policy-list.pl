@@ -10,7 +10,7 @@ getopts('d?exasfaimvnp:t:', \%opts);
 
 if ($opts{'?'}) {
   print STDERR <<EOT;
-Usage: class-list.pl [-sfm] [-ai] [-n] [-p <policy>] [-t <type>] [-ex]
+Usage: policy-list.pl [-sfm] [-ai] [-n] [-p <policy>] [-t <type>] [-ex]
 Options:
   -s          List schedules for each policy
   -f          List files for each policy

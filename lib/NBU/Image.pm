@@ -12,11 +12,13 @@ use NBU::Media;
 
 my %imageList;
 
+my $fileRecursionDepth = 1;
+
 BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.27 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -131,6 +133,9 @@ sub expires {
 sub loadDetail {
   my $self = shift;
 
+  #
+  # Layout of this output divined from 
+  # http://mailman.eng.auburn.edu/pipermail/veritas-bu/2001-May/003861.html
   my $pipe = NBU->cmd("bpimagelist -l -backupid ".$self->id." |");
   while (<$pipe>) {
     next if (/^HIST/);
@@ -145,6 +150,12 @@ sub loadDetail {
 	  $elapsed,
 	  $u16, $u17, $u18,
 	  $kbWritten,
+	  $fileCount, $copyCount, $fragmentCount,
+	  $compressed, $u24,
+	  $softwareVersion, $u26, $u27,
+	  $primary,
+	  $imageType, $TIRInfo, $TIRExpiration,
+	  $keywords
       ) = split;
       $self->{ELAPSED} = $elapsed;
     }
@@ -252,13 +263,38 @@ sub loadImages {
 
       my ($tag, $copy, $number, $size, $removable,
 	  $mediaType, $density, $fileNumber,
-	  $mediaID, $mmHost,
+          $rest) = split(/[\s]+/, $_, 9);
+
+      my ($mediaID, $volume);
+      if (($removable == 0) && ($mediaType == 0)) {
+        #
+        # Non-removable media (aka disk files) occasionally have spaces in their
+        # names and those will then be surrounded by double quotes...
+        # Additionally we tag these "media" as removable when creating them.
+        if ($rest =~ s/\"(.*)\"[\s]//) {
+	  $mediaID = $1;
+        }
+        else {
+	  $rest =~ s/([\S]+)//;
+	  $mediaID = $1;
+        }
+        $volume = NBU::Media->new($mediaID, undef, 0);
+      }
+      else {
+	$rest =~ s/([\S]+)//;
+	$mediaID = $1;
+        $volume = NBU::Media->new($mediaID, undef, 1);
+        $volume->density($density);
+      }
+      my ($mmdbHostName,
 	  $blockSize, $offset, $allocated, $dwo,
 	  $u6, $u7,
 	  $expires, $mpx
-      ) = split;
-      my $volume = NBU::Media->new($mediaID);  $volume->density($density);
+      ) = split(/[\s]+/, $rest);
+      $volume->mmdbHost(NBU::Host->new($mmdbHostName));
+
       my $fragment = NBU::Fragment->new($number, $image, $volume, $offset, $size, $dwo, $fileNumber, $blockSize);
+
       $volume->insertFragment($fileNumber - 1, $fragment);
       $image->insertFragment($fragment);
       $image->density($density);
@@ -270,16 +306,23 @@ sub loadImages {
 
 sub loadFileList {
   my $self = shift;
+  my $func = shift;
+  my $depth = shift;
   my @fl;
  
   my ($s, $m, $h, $dd, $mon, $year, $wday, $yday, $isdst) = localtime($self->ctime);
   my $mm = $mon + 1;
   my $yy = sprintf("%02d", ($year + 1900) % 100);
-  my $pipe = NBU->cmd("bpflist -t ANY".
-    " -option GET_ALL_FILES".
-    " -client ".$self->client->name.
-    " -backupid ".$self->id.
-    " -d ${mm}/${dd}/${yy}"." |");
+
+  $depth = $fileRecursionDepth if (!defined($depth));
+  my $pipe = NBU->cmd("bpflist -t ANY"
+    ." -option GET_ALL_FILES"
+    ." -client ".$self->client->name
+    ." -backupid ".$self->id
+    ." -d ${mm}/${dd}/${yy}"
+    ." -rl $depth"
+    ." |");
+
   while (<$pipe>) {
     next if (/^FILES/);
     chop;
@@ -287,25 +330,39 @@ sub loadFileList {
     # Since file names can contain spaces and some bright soul decided to place the file
     # name in the middle of this line, we need to pick it apart in three pieces:
     #  before, filename, after
-    my ($i, $u1, $u2, $u3, $offset, $u4, $u5, $u6, $u7, $rest) = split(/[\s]+/, $_, 10);
-    if (!($rest =~ /^(.*)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)$/)) {
+    # More details at https://forums.symantec.com/syment/board/message?board.id=21&thread.id=5475
+    my ($i, $compressedFileSize, $pathLength, $u3, $offset,
+            $imageMode, $rawPartitionSize,
+            $largeFileSize, # only set if file over 2GB; units are in GB
+            $physicalDeviceNumber,
+        $rest) = split(/[\s]+/, $_, 10);
+    if (!($rest =~ /^(.*)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]$/)) {
       print STDERR "IMAGE filename match failed on $_\n";
       exit;
     }
-    my ($name, $u8, $user, $group, $size, $tm1, $tm2, $tm3) = ($1, $2, $3, $4, $5, $6. $7, $8);
-    next if ($name =~ /(\/|\\)$/);
-    push @fl, $name;
+    my ($name, $mode, $user, $group, $size,
+               $lastAccessed, $lastModified, $lastInodeModified
+       ) = ($1, $2, $3, $4, $5, $6. $7, $8);
+#    next if ($name =~ /(\/|\\)$/);
+    if (defined($func)) {
+      &$func($name);
+    }
+    else {
+      push @fl, $name;
+    }
   }
   close($pipe);
 
-  $self->{FLIST} = \@fl;
+  if (!defined($func)) {
+    $self->{FLIST} = \@fl;
+  }
 }
 
 sub fileList {
   my $self = shift;
 
   if (!$self->{FLIST}) {
-    $self->loadFileList;
+    $self->loadFileList(undef, undef);
   }
 
   if (my $flR = $self->{FLIST}) {
@@ -323,6 +380,16 @@ sub density {
   }
 
   return $NBU::Media::densities{$self->{DENSITY}};
+}
+
+sub fileRecursionDepth {
+  my $proto = shift;
+
+  if (@_) {
+    $fileRecursionDepth = shift;
+  }
+
+  return $fileRecursionDepth;
 }
 
 sub volume {

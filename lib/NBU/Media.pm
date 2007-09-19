@@ -17,7 +17,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.34 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.39 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -102,14 +102,17 @@ sub new {
   if (@_) {
     my $mediaID = shift;
     my $voldbHost = shift;
+    my $removable = shift;
 
     if (exists($mediaList{$mediaID})) {
       return $mediaList{$mediaID};
     }
 
     $media->{VOLDBHOST} = $voldbHost;
-    $media->{EVSN} = $mediaID;
-    $mediaList{$media->{EVSN}} = $media;
+    $media->{RVSN} = $mediaID;
+    $mediaList{$media->{RVSN}} = $media;
+
+    $media->{REMOVABLE} = $removable;
   }
   return $media;
 }
@@ -117,10 +120,10 @@ sub new {
 my $filled;
 sub populate {
   my $proto = shift;
+  my $volume;
   my $updateRobot = shift;
 
   my $pipe;
-  my $volume;
 
   $filled = 0;
 
@@ -171,11 +174,15 @@ sub populate {
 	= split(/[\s]+/, $_, 37);
 
       #
-      # "Normal" installations will not use the same barcode in more than one volume
-      # database.  Thus our test here more or less expects not to find this id:
+      # "Normal" installations will not use the same serial number in more than 
+      # one volume database.  Thus our test here more or less expects not to
+      # find this id:
       $volume = NBU::Media->byID($id, $voldbHost);
       if (defined($volume)) {
-	print STDERR "Volume $id in voldb on ".$voldbHost->name." conflicts with that on ".$volume->voldbHost->name."\n" if (NBU->debug);
+	if (NBU->debug) {
+	  print STDERR "Volume $id in voldb on ".$voldbHost->name." conflicts with existing volume\n";
+	  print STDERR "  Host: ".$volume->voldbHost."\n";
+	}
 	next;
       }
       else {
@@ -227,10 +234,13 @@ sub populate {
   $pipe = NBU->cmd("bpmedialist -L |");
   my $mmdbHost;
   while (<$pipe>) {
-    if (/^Server Host = ([\S]+)$/) {
+
+    if (/^Server Host = ([\S]+)[\s]*$/) {
       $mmdbHost = NBU::Host->new($1);
+      next;
     }
-    if (/^media_id = ([A-Z0-9]{6}), partner_id.*/) {
+
+    if (/^media_id = ([A-Z0-9]+), partner_id.*/) {
       if ($volume) {
         print STDERR "New media $1 encountered when old one ".$volume->id." still active!\n";
         exit 0;
@@ -282,7 +292,7 @@ sub populate {
       next;
     }
 
-    if (/^status = 0x([0-9A-Fa-f]+), /) {
+    if (/^status = 0x([0-9A-Fa-f]+)/) {
       my $status = $1;
       my $result = 0;
       foreach my $d (split(/ */, $status)) {
@@ -294,10 +304,19 @@ sub populate {
       next;
     }
 
-    if (/^$/) {
+    if (/^res1 = /) {
+      next;
+    }
+
+    if (/^vmpool = /) {
+      next;
+    }
+
+    if (/^[\s]*$/) {
       $volume = undef;
       next;
     }
+print STDERR "Unknown line\n \"$_\"\n";
   }
   close($pipe);
 }
@@ -395,16 +414,16 @@ sub barcode {
   my $self = shift;
 
   if (@_) {
-    if (my $oldBarcode = $self->{BARCODE}) {
+    if (my $oldBarcode = $self->{EVSN}) {
       delete $barcodeList{$oldBarcode};
-      $self->{BARCODE} = undef;
+      $self->{EVSN} = undef;
     }
     if (my $barcode = shift) {
       $barcodeList{$barcode} = $self;
-      $self->{BARCODE} = $barcode;
+      $self->{EVSN} = $barcode;
     }
   }
-  return $self->{BARCODE};
+  return $self->{EVSN};
 }
 
 sub previousPool {
@@ -594,23 +613,21 @@ sub byBarcode {
 }
 
 #
-# The External Volume Serial Number (evsn) is the same as the media ID hence
+# The Recorded Volume Serial Number (rvsn) is the same as the media ID hence
 # the two variants of id and byID.
 sub byID {
   my $proto = shift;
   my $mediaID = shift;
+  my $voldbHost = shift;
 
 
   if (my $volume = $mediaList{$mediaID}) {
     return $volume;
   }
-  else {
-#     return NBU::Media->new($mediaID);
-  }
   return undef;
 }
 
-sub byEVSN {
+sub byRVSN {
   my $self = shift;
 
   return $self->byID(@_);
@@ -620,29 +637,29 @@ sub id {
   my $self = shift;
 
   if (@_) {
-    $self->{EVSN} = shift;
-    $mediaList{$self->{EVSN}} = $self;
+    $self->{RVSN} = shift;
+    $mediaList{$self->{RVSN}} = $self;
   }
 
-  return $self->{EVSN};
+  return $self->{RVSN};
 }
-sub evsn {
+sub rvsn {
   my $self = shift;
 
   return $self->id(@_);
 }
 
 #
-# This is the Recorded Volume Serial Number which can sometimes be
-# different.
-sub rvsn {
+# This is the External Volume Serial Number which can sometimes be
+# different than the Recorded Volume Serial Number (RVSN).
+sub evsn {
   my $self = shift;
 
   if (@_) {
-    $self->{RVSN} = shift;
+    $self->{EVSN} = shift;
   }
 
-  return $self->{RVSN};
+  return $self->{EVSN};
 }
 
 sub robot {
@@ -676,7 +693,6 @@ sub selected {
 
 sub mount {
   my $self = shift;
-  my $id = $self->id;
 
   if (@_) {
     my ($mount, $drive) = @_;
@@ -704,9 +720,17 @@ sub unmount {
   return $self;
 }
 
+sub read {
+  my $self = shift;
+
+  my ($size, $speed) = @_;
+
+  $self->{SIZE} += $size;
+  $self->{READTIME} += ($size / $speed);
+}
+
 sub write {
   my $self = shift;
-  my $id = $self->id;
 
   my ($size, $speed) = @_;
 
@@ -862,25 +886,25 @@ sub unsuspend {
 sub unmountable {
   my $self = shift;
 
-  return $self->{STATUS} & 0x10;
+  return (defined($self->{STATUS}) ? $self->{STATUS} & 0x10 : 0);
 }
 
 sub multipleRetentions {
   my $self = shift;
 
-  return $self->{STATUS} & 0x40;
+  return (defined($self->{STATUS}) ? $self->{STATUS} & 0x40 : 0);
 }
 
 sub imported {
   my $self = shift;
 
-  return $self->{STATUS} & 0x80;
+  return (defined($self->{STATUS}) ? $self->{STATUS} & 0x80 : 0);
 }
 
 sub mpx {
   my $self = shift;
 
-  return $self->{STATUS} & 0x200;
+  return (defined($self->{STATUS}) ? $self->{STATUS} & 0x200 : 0);
 }
 
 sub offsiteSessionID {
@@ -1013,7 +1037,7 @@ sub offsiteSlot {
 sub full {
   my $self = shift;
 
-  return ($self->{STATUS} & 0x8);
+  return (defined($self->{STATUS}) ? $self->{STATUS} & 0x8 : 0);
 }
 
 #
@@ -1044,16 +1068,22 @@ sub fillTime {
 sub eject {
   my $self = shift;
 
-#"vmchange -res -m $media_id -rt $lc_robot_type -mt $media_id -rn $robot_num -rh $robot_host -rc1 $slot -rc2 $side -e" ;
   if ($self->robot) {
     NBU->cmd("vmchange -res"." -m ".$self->id." -mt ".$self->id.
-	      " -rn ".$self->robot->id." -rc1 ".$self->slot." -rh ".$self->robot->host->name.
-	      " -e", 0);
+	      " -rn ".$self->robot->id." -rc1 ".$self->slot.
+	      " -rh ".$self->robot->host->name.
+	      " -e -sec 1", 0);
     return $self;
   }
   else {
     return undef;
   }
+}
+
+sub removable {
+  my $self = shift;
+
+  return !(defined($self->{REMOVABLE}) && !$self->{REMOVABLE});
 }
 
 #
@@ -1066,6 +1096,11 @@ sub insertFragment {
   $self->{TOC} = [] if (!defined($self->{TOC}));
 
   my $toc = $self->{TOC};
+
+  #
+  # Non-removable media means disk storage unit "media".  These only
+  # contain a single fragment so we force the index to zero.
+  $index = 0 if (!$self->removable);
 
   $$toc[$index] = [] if (!defined($$toc[$index]));
   my $mpxList = $$toc[$index];

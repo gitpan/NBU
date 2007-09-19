@@ -30,11 +30,11 @@ away from the main distribution.  One way to affect this is to run the
 Then, to gain access to the utilities, make sure /usr/local/bin is in your
 PATH, /usr/local/lib/perl5 is in your PERLLIB path and /usr/local/man is in your MANPATH.
 
-Making local modifications in these modules is strongly discouraged, instead please consider
-making your contributions available to the author so they can be included in future
-releases.  If you want to create test distribution of your own however, you can simply
-alter the VERSION variable in Makefile.PL, re-create the Makefile itself and issues the
-command:
+Making local modifications in these modules is strongly discouraged, instead
+please consider making your contributions available to the author so they can
+be included in future releases.  If you want to create test distribution of
+your own however, you can simply alter the VERSION variable in Makefile.PL,
+re-create the Makefile itself and issues the command:
 	make dist
 
 As of $Date: 2003/01/06 13:47:07 $, NBU and/or its scripts and examples require the following

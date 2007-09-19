@@ -1,3 +1,17 @@
+For release 0.91
+Bug fixes, of course; mostly related to changes in the output of various
+NetBackup tools as this release finally catches up with Veritas' release 5.1
+and its patches.  Hopefully support for 6.x will not take near as long!
+Here is a brief overview of some of the major work that has gone into
+release 0.91:
+- Support for Windows (under cygwin) completed
+- Properly handle disk based storage units and their file "volumes".
+- Handle new calendaring schedule format
+- Handle Duplicate job type
+- coverage.pl XML-ized and taught about various new OS versions
+- client-list.pl, volume-use.pl, robot-status.pl "production" ready
+- policy-space.pl shows backup volume analysis capabilities
+and of course many, many bug-fixes.
 For release 0.90
 Finally getting down to the hard work of writing docs and on-line help.  Can
 you believe it?

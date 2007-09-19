@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.10 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.11 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -39,10 +39,16 @@ sub new {
 
   if (defined(my $pipe = shift)) {
 
+    my $extra = shift;
+
     #
     # Read in one line with 7 pairs of window start and length numbers; record them as a 7
     # element array of arrays.
-    $_ = <$pipe>;  return undef if (!/^SCHEDWIN/);
+    $_ = <$pipe>;
+    while (/^SCHEDCAL/) {
+      $_ = <$pipe>;
+    }
+    return undef if (!/^SCHEDWIN/);
     my @times = split;
     my @windows;
     for my $d (0..6) {
@@ -62,6 +68,13 @@ sub new {
     $schedule->{FREQUENCY} = shift;
     my $retentionLevel = shift;
     $schedule->{RETENTION} = NBU::Retention->byLevel($retentionLevel);
+
+    #
+    # Triggered by presence of the FOE tag in the parent Policy definition
+    if ($extra) {
+      $_ = <$pipe>;  return undef if (!/^SCHEDRL/);
+      $_ = <$pipe>;  return undef if (!/^SCHEDFOE/);
+    }
   }
 
   return $schedule;

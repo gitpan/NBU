@@ -9,12 +9,13 @@ use strict;
 use Carp;
 
 use NBU::Drive;
+use NBU::Path;
 
 BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.8 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.12 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -41,7 +42,7 @@ sub new {
     }
 
     $mount->{JOB} = $job;
-    $mount->{MEDIA} = $volume;
+    $mount->{TARGET} = $volume;
     $mount->{MOUNTTIME} = $tm;
     $mount->{MOUNTDELAY} = $tm - $volume->selected
       if ($volume->selected);
@@ -63,12 +64,15 @@ sub unmount {
 
   my $tm = $self->{UNMOUNTTIME} = shift;
 
-  if ($job->mount == $self) {
-    $job->mount(undef);
-  }
 
-  $self->drive->free($tm)
-    if ($self->drive);
+  if (defined($job->mount)) {
+    if ($job->mount == $self) {
+      $job->mount(undef);
+    }
+
+    $self->drive->free($tm, $self->usedBy)
+      if ($self->drive);
+  }
 
   return $self->{UNMOUNTTIME};
 }
@@ -98,29 +102,84 @@ sub positioned {
 
 }
 
-sub drive {
+sub mountPoint {
   my $self = shift;
 
   if (@_) {
-    $self->{DRIVE} = shift;
+    $self->{MP} = shift;
   }
-  return $self->{DRIVE};
+  return $self->{MP};
+}
+
+sub drive {
+  my $self = shift;
+
+  return $self->mountPoint(@_);
+}
+
+sub path {
+  my $self = shift;
+
+  return $self->mountPoint(@_);
+}
+
+sub target {
+  my $self = shift;
+
+  return $self->{TARGET};
 }
 
 sub volume {
   my $self = shift;
 
-  return $self->{MEDIA};
+  return $self->target(@_);
+}
+
+sub file {
+  my $self = shift;
+
+  return $self->target(@_);
+}
+
+sub usedBy {
+  my $self = shift;
+
+  if (@_) {
+    $self->{USEDBY} = shift;
+  }
+  return $self->{USEDBY};
+}
+
+sub read {
+  my $self = shift;
+
+  my ($fragmentNumber, $size, $speed) = @_;
+
+  $self->{FRAGMENT} = $fragmentNumber;
+
+  #
+  # Grow size and keep running average speed
+  $self->{SIZE} += $size;
+  $self->{READINGTIME} += ($size / $speed);
+  $self->{SPEED} = $self->{SIZE} / $self->{READINGTIME};
+
+  $self->volume->read($size, $speed);
+
+  return $self;
 }
 
 sub write {
   my $self = shift;
 
-  my ($fragment, $size, $speed) = @_;
+  my ($fragmentNumber, $size, $speed) = @_;
 
-  $self->{FRAGMENT} = $fragment;
-  $self->{SIZE} = $size;
-  $self->{SPEED} = $speed;
+  $self->{FRAGMENT} = $fragmentNumber;
+
+  #
+  # Grow size and keep running average speed
+  $self->{SIZE} += $size;
+  $self->{WRITINGTIME} += ($size / $speed);
+  $self->{SPEED} = $self->{SIZE} / $self->{WRITINGTIME};
 
   $self->volume->write($size, $speed);
 
@@ -143,7 +202,19 @@ sub writeTime {
   return undef;
 }
 
+sub dataRead {
+  my $self = shift;
+
+  return $self->data(@_);
+}
+
 sub dataWritten {
+  my $self = shift;
+
+  return $self->data(@_);
+}
+
+sub data {
   my $self = shift;
 
   return $self->{SIZE};

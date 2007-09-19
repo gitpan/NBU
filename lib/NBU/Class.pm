@@ -17,7 +17,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.23 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.24 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -77,6 +77,7 @@ my %classTypes = (
   20 => "FlashBackup",
   21 => "SplitMirror",
   22 => "AFS",
+  30 => "Vault",
 );
 
 my $rollCalled = 0;
@@ -367,6 +368,8 @@ sub type {
   if (@_) {
     $self->{TYPE} = shift;
   }
+  print STDERR "Asked to return unknown type ".$self->{TYPE}." for ".$self->{NAME}."\n"
+   if !defined($classTypes{$self->{TYPE}});
   return $classTypes{$self->{TYPE}};
 }
 

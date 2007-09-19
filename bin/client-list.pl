@@ -5,7 +5,7 @@ use strict;
 use Getopt::Std;
 
 my %opts;
-getopts('smodv', \%opts);
+getopts('ismodv', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -21,15 +21,19 @@ foreach my $client (sort {$a->name cmp $b->name} (NBU::Host->list)) {
   if ($opts{'v'}) {
       my $version = $client->NBUVersion;
       print ": $version";
-      if ($version eq "3.4.0") {
-	my $release = $client->release;
-	print " - $release";
-      }
+      my $release = $client->releaseID;
+      print " - $release";
+  }
+  if ($opts{'i'} || $opts{'s'}) {
+    my $ip = $client->IPaddress;
+    if (defined($ip)) {
+      print ": $ip";
+    }
   }
   if ($opts{'o'} || $opts{'s'}) {
     my $os = $client->os;
     if (!defined($os) || ($os =~ /^[\s]*$/)) {
-      print STDERR "Missing os information for $cn\n"
+#      print STDERR "Missing os information for $cn\n"
     }
     else {
       print ": $os" if ($opts{'o'});

@@ -5,7 +5,20 @@ use strict;
 use Getopt::Std;
 
 my %opts;
-getopts('ucd', \%opts);
+getopts('?ucxd', \%opts);
+
+if ($opts{'?'}) {
+  print STDERR <<EOT;
+Usage: coverage.pl [-x] [-u|-c] [hostname [hostname ...]]
+Options:
+  -u       Only list uncovered mountpoints
+  -c       Only list covered mountpoints
+
+  -x       Produce xml output
+EOT
+  exit;
+}
+
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -23,31 +36,45 @@ else {
   @clients = (sort {$a->name cmp $b->name} (NBU::Host->list));
 }
 
+if ($opts{'x'}) {
+  print "<?xml version=\"1.0\"?>\n";
+  print "<coverage>\n";
+}
 foreach my $client (@clients) {
   my $cn = $client->name;
 
-  print "$cn:";
+  if ($opts{'x'}) {
+    print "  <host name=\"$cn\">";
+  }
+  else {
+    print "$cn:";
+  }
   my %mountPointList = $client->coverage;
   foreach my $mp (sort (keys %mountPointList)) {
     my $clR = $mountPointList{$mp};
-    my $mpStatus = "\t$mp:";
+    my $mpStatus = ($opts{'x'} ? "    <mountpoint path=\"$mp\">" : "\t$mp:");
     my $disposition;
     my $covered;
     if ($clR) {
       foreach my $class (@$clR) {
 	my $cn = $class->name;
 	if ($class->active) {
-	  $mpStatus .= " $cn" if ($opts{'c'} || !$opts{'u'});
+          if ($opts{'c'} || !$opts{'u'}) {
+	    $mpStatus .= ($opts{'x'} ? "\n      <covered policy=\"$cn\" active=\"1\" />" : " $cn");
+          }
 	  $covered += 1;
 	}
 	else {
-	  $mpStatus .= " ($cn)" if ($opts{'u'} || !$opts{'c'});
+	  if ($opts{'u'} || !$opts{'c'}) {
+	    $mpStatus .= ($opts{'x'} ? "\n    <covered policy=\"$cn\" active=\"0\" />" : " ($cn)");
+          }
 	}
       }
     }
     else {
-      $mpStatus .= " not covered";
+      $mpStatus .= " not covered" if (!$opts{'x'});
     }
+    $mpStatus .= "\n    </mountpoint>" if ($opts{'x'});
     if ((!$opts{'u'} && !$opts{'c'}) ||
 	($opts{'u'} && !$covered) ||
 	($opts{'c'} && $covered)) {
@@ -55,27 +82,33 @@ foreach my $client (@clients) {
     }
   }
 
-  if ($opts{'c'} || !$opts{'u'}) {
-    my $sep = "\n\tadditional active classes are: ";
-    foreach my $class ($client->classes) {
-      if ($class->active && !$class->providesCoverage) {
-	print $sep.$class->name;
-	$sep = " ";
+  if (!$opts{'x'}) {
+    if ($opts{'c'} || !$opts{'u'}) {
+      my $sep = "\n\tadditional active classes are: ";
+      foreach my $class ($client->classes) {
+        if ($class->active && !$class->providesCoverage) {
+  	print $sep.$class->name;
+  	$sep = " ";
+        }
       }
     }
-  }
-
-  if ($opts{'u'} || !$opts{'c'}) {
-    my $sep = "\n\tadditional inactive classes are: ";
-    foreach my $class ($client->classes) {
-      if (!$class->active && !$class->providesCoverage) {
-	print $sep."(".$class->name.")";
-	$sep = " ";
+  
+    if ($opts{'u'} || !$opts{'c'}) {
+      my $sep = "\n\tadditional inactive classes are: ";
+      foreach my $class ($client->classes) {
+        if (!$class->active && !$class->providesCoverage) {
+  	print $sep."(".$class->name.")";
+  	$sep = " ";
+        }
       }
     }
   }
   print "\n";
+  if ($opts{'x'}) {
+    print "  </host>\n\n";
+  }
 }
+print "</coverage>\n" if ($opts{'x'});
 
 =head1 NAME
 
@@ -83,7 +116,7 @@ coverage.pl - Analyze Which File-Systems (if any) Are Backed Up
 
 =head1 SYNOPSIS
 
-coverage.pl [options...] [hostname [, hostname ...]]
+coverage.pl [options...] [hostname [hostname ...]]
 
 =head1 DESCRIPTION
 
@@ -115,6 +148,10 @@ Only list file-systems that are covered.
 =item L<-u|-u>
 
 Only list file-systems that are uncovered.
+
+=item L<-x|-x>
+
+Produce output in XML format
 
 =over 4
 

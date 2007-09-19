@@ -14,17 +14,20 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.26 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
 }
 
-my %aliases = (
-  'opscenter' => 'opscenter.bkup',
-  'opscenter.bk' => 'opscenter.bkup',
-);
+my %aliases;
+sub loadAlias {
+  my $proto = shift;
+  my ($alias, $canonical) = @_;
+
+  $aliases{$alias} = $canonical;
+}
 
 sub new {
   my $proto = shift;
@@ -44,6 +47,7 @@ sub new {
       $hostList{$keyName} = $host;
 
       $host->{ENROLLED} = 0;
+      $host->{MM} = 0;
     }
   }
   return $host;
@@ -84,6 +88,15 @@ sub enrolled {
   my $self = shift;
 
   $self->{ENROLLED} = 1;
+}
+
+sub mediaManager {
+  my $self = shift;
+
+  if (@_) {
+    $self->{MM} = shift;
+  }
+  return $self->{MM};
 }
 
 sub loadClasses {
@@ -133,16 +146,24 @@ sub loadConfig {
   my $self = shift;
 
   return 1 if ($self->{CONFIGLOADED});
+  $self->{PLATFORM} = undef;
+  $self->{OS} = undef;
+  $self->{NBUVERSION} = undef;
+  $self->{RELEASE} = undef;
+  $self->{RELEASEID} = undef;
   $self->{CONFIGLOADED} = 1;
 
   my $pipe = NBU->cmd("bpgetconfig -g ".$self->name." |");
-  return unless defined($_ = <$pipe>);  chop;
+  unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
   if (/Client of ([\S]+)/) {
     $self->{MASTER} = NBU::Host->new($1);
   }
+  else {
+    $self->{MEDIASERVER} = 1;
+  }
 
   # OS on this machine
-  return unless defined($_ = <$pipe>);  chop;
+  unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
   if (/^([\S]+), ([\S]+)$/) {
     $self->{PLATFORM} = $1;
     $self->{OS} = $2;
@@ -154,17 +175,34 @@ sub loadConfig {
   # Now get the NetBackup version information
   # All the hosts in the cluster better be running the same version
   # but we're not checking for that at this time.
-  return unless defined($_ = <$pipe>);  chop;
+  unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
   $self->{NBUVERSION} = $_;
 
   # Product identifier
-  return unless defined($_ = <$pipe>);  chop;
+  unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
 
   if (defined($_ = <$pipe>)) {
-    chop;
+    chop;  s/[\s]*$//;
     $self->{RELEASE} = $_;
   }
-    
+
+  if (defined($_ = <$pipe>) && ($_ !~ /^[\s]*$/)) {
+    chop;  s/[\s]*$//;
+    $self->{RELEASEID} = $_;
+  }
+  else {
+    $self->{RELEASEID} = "000000";
+  }
+
+  if ($self->releaseID >= "450000") {
+    # Install path
+    return unless defined($_ = <$pipe>);  chop;  s/[\s]*$//;
+    # Detailed OS
+    return unless defined($_ = <$pipe>);  chop;  s/[\s]*$//;
+    my ($os, $v) = split;
+    $self->{OS} = $os;
+  }
+ 
   close($pipe);
 
   # The -f option used to tell us, when we were media managers,
@@ -229,6 +267,18 @@ sub NBUVersion {
   return $self->{NBUVERSION};
 }
 
+sub IPaddress {
+  my $self = shift;
+
+  if (!defined($self->{IPADDRESS})) {
+    my $rawAddress = (gethostbyname($self->name))[4];
+    my @octets = unpack("C4", $rawAddress);
+    $self->{IPADDRESS} = join(".", @octets);
+  }
+
+  return $self->{IPADDRESS};
+}
+
 sub release {
   my $self = shift;
 
@@ -240,6 +290,19 @@ sub release {
   }
 
   return $self->{RELEASE};
+}
+
+sub releaseID {
+  my $self = shift;
+
+  if (@_) {
+    $self->{RELEASEID} = shift;
+  }
+  else {
+    $self->loadConfig;
+  }
+
+  return $self->{RELEASEID};
 }
 
 sub loadCoverage {
@@ -260,10 +323,15 @@ sub loadCoverage {
         $loadOK = 1;
       }
     }
-    elsif ($loadOK && !(/^$/) && !(/   Exit status/)) {
-      my ($mountPoint, @remainder) = split;
+    elsif ($loadOK && !(/^[\s]*$/) && !(/   Exit status/)) {
+      #
+      # Preserve input line in local variable because some methods called below
+      # open other streams and thus clobber the global $_!
+      my $l = $_;
 
-      if ($self->os =~ /[Ss]olaris|linux|hp10.20/) {
+      if ($self->os =~ /rs6000_42|SunOS|[Ss]olaris|linux|hp10.20/) {
+        $_ = $l;
+	my ($mountPoint, @remainder) = split;
 	my ($deviceFile, $className, $status) = @remainder;
 
 	next if ($deviceFile !~ /^\//);
@@ -282,9 +350,13 @@ sub loadCoverage {
           push @$clR, $class;
         }
       }
-      elsif ($self->os =~ /Windows(NT|2000|XP)/) {
+      elsif ($self->os =~ /Windows(NET|NT|2000|XP)/) {
+        $_ = $l;
+        s/^[\s]*([\S].*:.)//;  my $mountPoint = $1;
+        my (@remainder) = split;
 	my $deviceFile;
-	if ($self->NBUVersion eq "4.5.0") {
+
+	if ((($self->releaseID eq "451000") && defined($self->{MEDIASERVER}))) {
 	  $deviceFile = shift @remainder;
 	}
         my ($className, $status) = @remainder;
@@ -298,6 +370,7 @@ sub loadCoverage {
 	    $coverage{$mountPoint} = $clR = [];
 	  }
 	  my $class = NBU::Class->byName($className, $self->clientOf);
+          print STDERR "Unknown class referenced: $className\n" if (!defined($class));
 	  $class->providesCoverage(1);
           push @$clR, $class;
         }

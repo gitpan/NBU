@@ -7,7 +7,7 @@ use Time::Local;
 use POSIX qw(strftime);
 
 my %opts;
-getopts('dc', \%opts);
+getopts('edc', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});
@@ -59,7 +59,7 @@ if ($opts{'c'}) {
 my @list = NBU::Media->list;
 for my $m (sort levelStatusSort @list) {
 
-#print STDERR "Trouble: ".$m->id." does not equal ".$m->barcode."\n" if ($m->id ne $m->barcode);
+  print "".$m->id.": does not have identical barcode/EVSN: ".$m->barcode."\n" if (($m->id ne $m->barcode) && $opts{'e'});
 
   if ($opts{'c'}) {
     $csv->combine($m->id,
@@ -76,10 +76,12 @@ for my $m (sort levelStatusSort @list) {
 	  .": ".$m->type
 	  .": ".(defined($m->pool) ? $m->pool->name : "NONE")
 	  .": ".(defined($m->group) ? $m->group : "NONE")
+	  .": ".(defined($m->mmdbHost) ? $m->mmdbHost->name : "<unknown>")
 	  .($m->allocated ? ": Allocated ".substr(localtime($m->allocated), 4).": rl ".$m->retention->level : "")
-#	  .($m->mpx ? ": Multiplexed" : "")
-#	.($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
-        .(($m->allocated && $m->full) ? ": topped off at ".$m->dataWritten : "")
+	  .($m->mpx ? ": Multiplexed" : "")
+	  .($m->full ? ": Filled in ".dispInterval($m->fillTime) : "")
+          .(($m->allocated && $m->full) ? ": topped off at ".$m->dataWritten : "")
+#         .(($m->allocated && $m->expires) ? ": expires ".substr(localtime($m->expires), 4) : "")
 	  ;
     if (defined($m->offsiteLocation)) {
       print " at ".$m->offsiteLocation."/".(defined($m->offsiteSlot) ? sprintf("%4d", $m->offsiteSlot) : "????");

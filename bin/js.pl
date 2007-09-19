@@ -2,6 +2,7 @@
 
 use strict;
 
+use POSIX;
 use Getopt::Std;
 use Time::Local;
 
@@ -109,6 +110,7 @@ my %stateCodes = (
   'done' => 'D',
   'queued' => 'Q',
   're-queued' => 'R',
+  'incomplete' => 'I',
 );
 
 my $totalWritten = 0;
@@ -125,12 +127,15 @@ my $mm;  my $dd;  my $yyyy;
 #my $since = timelocal(0, 0, 0, $dd, $mm-1, $yyyy);
 my $since = $asOf - ($period *  (24 * 60 * 60));
 
+
+my $CLIENTWIDTH = 25;
+
 if ($opts{'x'}) {
   print "<?xml version=\"1.0\"?>\n";
   print "<job-list>\n";
 }
 else {
-  my $hdr = sprintf("%15s", "CLIENT    ");
+  my $hdr = sprintf("%${CLIENTWIDTH}s", "CLIENT    ");
   if ($opts{'v'}) {
     $hdr .= " ".sprintf("%-40s", "             CLASS/SCHEDULE");
   }
@@ -175,7 +180,7 @@ for my $job (sort $sortOrder (@jl)) {
 
     my $who = $job->client->name;
     $activeClients{$who} += 1;
-    $who = sprintf("%15s", $who) unless ($opts{'x'});
+    $who = sprintf("%${CLIENTWIDTH}s", $who) unless ($opts{'x'});
 
     my $policyName = my $classID = $job->class->name;
     my $scheduleName = $job->schedule->name;
@@ -303,9 +308,9 @@ for my $job (sort $sortOrder (@jl)) {
 
 	my $windowsComment = $1 if ($msg =~ s/(\(WIN32.*\))//);
 
-	printf("\n%15s - %s", "  +".dispInterval($tm-$job->start), $msg);
+	printf("\n%${CLIENTWIDTH}s - %s", "  +".dispInterval($tm-$job->start), $msg);
 	if (defined($windowsComment) && ($windowsComment !~ /WIN32 32:/)) {
-	  printf("\n%15s   %s", "", $windowsComment);
+	  printf("\n%${CLIENTWIDTH}s   %s", "", $windowsComment);
 	}
       }
     }

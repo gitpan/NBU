@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.19 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.22 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -49,6 +49,14 @@ sub new {
     $drive->{HANDLERS} = {};
   }
   return $drive;
+}
+
+#
+# Drive objects return 2, just as Media Manager storage units do
+sub type {
+  my $self = shift;
+
+  return 2;
 }
 
 sub byIndex {
@@ -104,13 +112,13 @@ sub populate {
       $drive->{CONTROL} = $control;
       $drive->{STATUS} = ($control !~ /DOWN/) ? "UP" : "DOWN";
 
-      if ($evsn ne "-") {
+      if ($rvsn ne "-") {
 	# Unfortunately there is no way to find out which job is using this drive :-(
-	if (defined(my $volume = NBU::Media->new($evsn))) {
+	if (defined(my $volume = NBU::Media->new($rvsn))) {
 	  my $mount = NBU::Mount->new(undef, $volume, $drive, time);
           $drive->use($mount, time);
 	}
-else {die("Cannot located media $evsn?\n");}
+else {die("Cannot located media $rvsn?\n");}
       }
 
       $driveCount++;
@@ -192,17 +200,17 @@ sub updateStatus {
     if ($drive->busy) {
       my $mount = $drive->mount;
 
-      if ($evsn eq "-") {
+      if ($rvsn eq "-") {
         $drive->free(time);
       }
-      elsif ($mount->volume->evsn ne $evsn) {
+      elsif ($mount->volume->rvsn ne $rvsn) {
         $drive->free(time);
-	$mount = NBU::Mount->new(undef, NBU::Media->new($evsn), $drive, time);
+	$mount = NBU::Mount->new(undef, NBU::Media->new($rvsn), $drive, time);
 	$drive->use($mount, time);
       }
     }
-    elsif (!$drive->busy && ($evsn ne "-")) {
-      my $mount = NBU::Mount->new(undef, NBU::Media->new($evsn), $drive, time);
+    elsif (!$drive->busy && ($rvsn ne "-")) {
+      my $mount = NBU::Mount->new(undef, NBU::Media->new($rvsn), $drive, time);
       $drive->use($mount, time);
     }
   }
@@ -355,6 +363,8 @@ sub use {
 
   my %use;
   $use{'MOUNT'} = $mount;
+  $mount->usedBy(\%use);
+
   $self->{INUSE} = $use{'START'} = $tm;
   push @$uses, \%use;
   return $self;

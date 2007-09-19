@@ -6,7 +6,7 @@ use Getopt::Std;
 use Time::Local;
 
 my %opts;
-getopts('rdclsgpuUaAfFe:m:', \%opts);
+getopts('?rdclsgpuUaAfFe:m:', \%opts);
 
 use NBU;
 NBU->debug($opts{'d'});

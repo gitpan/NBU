@@ -13,20 +13,22 @@ NetBackup:
 	NBU::Image
 	NBU::Fragment
 
-	NBU::Class
+	NBU::Class (aka Policy)
 	NBU::Schedule
 
 	NBU::StorageUnit
 	NBU::Robot
 	NBU::Drive
 
+	NBU::License
+
 	NBU::Host
 
-	NBU::Image
 and a over-arching class simply called NBU to help hide local environmental
 matters as much as possible, allowing you to write your scripts in as neutral
 a way as possible.
 
 All these modules are automatically made available to your script when you 'use
 NBU' the top level module.  Please take a look at the examples directory to get
-a flavor for what these abstractions can do for you.
+a flavor for what these abstractions can do for you.  The bin directory
+contains some scripts that are usually helpful right out of the box.

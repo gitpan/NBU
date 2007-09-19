@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.43 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.53 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -37,6 +37,7 @@ sub new {
 
   if (@_) {
     $job->{PID} = shift;
+
     if (exists($pids{$job->pid})) {
       my $pidArray = $pids{$job->pid};
       push @$pidArray, $job;
@@ -48,6 +49,23 @@ sub new {
   return $job;
 }
 
+sub readerPID {
+  my $self = shift;
+
+  if (@_) {
+    my $reader = shift;
+    $self->{READERPID} = $reader;
+    if (exists($pids{$reader})) {
+      my $pidArray = $pids{$reader};
+      push @$pidArray, $self;
+    }
+    else {
+      $pids{$reader} = [ $self ];
+    }
+  }
+  return $self->{READERPID};
+}
+
 #
 # Extract all jobs from the hash and return them
 # in a simple array
@@ -57,7 +75,7 @@ sub list {
   return (values %jobs);
 }
 
-my @jobTypes = ("Backup", "Archive", "Restore", undef, undef, "Import", "Catalog");
+my @jobTypes = ("Backup", "Archive", "Restore", undef, "Duplicate", "Import", "Catalog");
 my $asOf;
 my $fromFile = $ENV{"HOME"}."/.alljobs.allcolumns";
 my ($jobPipe, $refreshPipe);
@@ -84,7 +102,7 @@ sub loadJobs {
     ($jobPipe, $refreshPipe) = NBU->cmd("| bpdbjobs -report -all_columns -stay_alive -M ".$master->name." $tee |");
   }
 
-  if (!(<$jobPipe> =~ /^C([\d]+)$/)) {
+  if (!(<$jobPipe> =~ /^C([\d]+)[\s]*$/)) {
     return undef;
   }
   my $jobRowCount = $1;
@@ -109,7 +127,7 @@ sub refreshJobs {
 
   print $refreshPipe "refresh\n" if (defined($refreshPipe));
 
-  if (!(<$jobPipe> =~ /^C([\d]+)$/)) {
+  if (!(<$jobPipe> =~ /^C([\d]+)[\s]*$/)) {
     return undef;
   }
   my $jobRowCount = $1;
@@ -224,20 +242,36 @@ sub parseJob {
       $elapsed = $tryElapsed;
       for my $t (1..$tryProgressCount) {
 	my $tryProgress = shift @tryRest;
-	my ($dt, $tm, $dash, $msg) = split(/[\s]+/, $tryProgress, 4);
-
+	my ($dt, $tm, $AMPM, $dash, $msg);
+	if ($tryProgress =~ /[\s][AP]M[\s]/) {
+	  ($dt, $tm, $AMPM, $dash, $msg) = split(/[\s]+/, $tryProgress, 5);
+	}
+	else {
+	  ($dt, $tm, $dash, $msg) = split(/[\s]+/, $tryProgress, 4);
+	}
 	my $mm;  my $dd;  my $yyyy;
-	if ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{4})/) {
+	if ($dt =~ /([\d]{1,2})\/([\d]{1,2})\/([\d]{4})/) {
 	  $yyyy = $3;
 	}
-	elsif ($dt =~ /([\d]{2})\/([\d]{2})\/([\d]{2})/) {
+	elsif ($dt =~ /([\d]{1,2})\/([\d]{1,2})\/([\d]{2})/) {
 	  $yyyy = $3 + 2000;
+	}
+	else {
+	  print STDERR "No match on date?\n";
+	  exit 0;
 	}
 	$mm = $1;  $dd = $2;
 
-	$tm =~ /([\d]{2}):([\d]{2}):([\d]{2})/;
+	$tm =~ /([\d]{1,2}):([\d]{1,2}):([\d]{1,2})/;
 	my $h = $1;  my $m = $2;  my $s = $3;
+	if (($AMPM =~ /PM/) && ($h != 12)) {
+	  $h += 12;
+	}
+	elsif (($AMPM =~ /AM/) && ($h == 12)) {
+	  $h -= 12;
+	}
 	my $now = timelocal($s, $m, $h, $dd, $mm-1, $yyyy);
+
 
 	if ($msg =~ /connecting/) {
 	  $job->startConnecting($now);
@@ -255,8 +289,13 @@ sub parseJob {
 	  # unfortunately this data stream does not tell us which drive :-(
 	  $job->mounted($now);
 	}
-	elsif ($msg =~ /positioning/) {
-	  my $fileNumber;
+	elsif ($msg =~ /positioning ([\S]+) to file ([\S]+)/) {
+	  my $volume = NBU::Media->new($1);
+	  my $fileNumber = $2;
+	  if (!defined($job->mount)) {
+	    $job->startMounting($now, $volume);
+	    $job->mounted($now);
+	  }
 	  $job->startPositioning($fileNumber, $now);
 	}
 	elsif ($msg =~ /positioned/) {
@@ -268,10 +307,23 @@ sub parseJob {
 	elsif ($msg =~ /end writing/) {
 	  $job->doneWriting($now);
 	}
-	elsif ($msg =~ /begin reading/) {
-	}
-	elsif ($msg =~ /end reading/) {
-	}
+	elsif ($msg =~ /begin reading/) { }
+	elsif ($msg =~ /end reading/) { }
+	#
+	# This block of message headers provided by cpf on 10/27/2003.
+	# They were introduced with the advent of release 4.5 FP5
+	elsif ($msg =~ /Critical bp/) {  }
+	elsif ($msg =~ /Error bp/) {  }
+	elsif ($msg =~ /Warning bp/) {  }
+	elsif ($msg =~ /begin Catalog/) {  }
+	elsif ($msg =~ /begin Restore/) {  }
+	elsif ($msg =~ /begin Duplicate/) {  }
+	elsif ($msg =~ /end Catalog/) {  }
+	elsif ($msg =~ /end Restore/) {  }
+	elsif ($msg =~ /end Duplicate/) {  }
+	elsif ($msg =~ /images required/) {  }
+	elsif ($msg =~ /media/) {  }
+	elsif ($msg =~ /started process/) {  }
 	else {
 print "$jobID\:$i\: $msg\n";
 	}
@@ -283,13 +335,18 @@ print "$jobID\:$i\: $msg\n";
     }
   }
 
+if (!defined($job->state)) {
+  print STDERR "Job ".$job->id." has no state?\n";
+}
   if ($job->state eq "active") {
     my $lastSize = $job->{SIZE} if (defined($job->{SIZE}));
     my $lastElapsed = $job->{ELAPSED} if (defined($job->{ELAPSED}));
 
     $job->{CURRENTFILE} = $currentFile;
+
     my $size = $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
     $job->{FILECOUNT} = $filesWritten if ($filesWritten ne "");
+
     $job->{OPERATION} = $operation if ($operation ne "");
     $job->{ELAPSED} = $elapsed if ($elapsed ne "");
 
@@ -418,6 +475,14 @@ sub image {
 sub client {
   my $self = shift;
 
+  if (@_) {
+    $self->{CLIENT} = shift;
+  }
+
+  if (!defined($self->{CLIENT}) && defined($self->{IMAGE})) {
+    $self->{CLIENT} = $self->image->client;
+  }
+
   return $self->{CLIENT};
 }
 
@@ -425,6 +490,14 @@ sub client {
 # written.
 sub class {
   my $self = shift;
+
+  if (@_) {
+    $self->{CLASS} = shift;
+  }
+
+  if (!defined($self->{CLASS}) && defined($self->{IMAGE})) {
+    $self->{CLASS} = $self->image->class;
+  }
 
   return $self->{CLASS};
 }
@@ -590,6 +663,24 @@ sub connected {
   $self->popState($tm);
 }
 
+sub fileOpened {
+  my $self = shift;
+  my $tm = shift;
+  my $file = shift;
+
+
+  my $fileListR = $self->{FILELIST};
+  $$fileListR{$tm} = $file;
+
+  my $mount = NBU::Mount->new($self, $file, $self->storageUnit->path, $tm);
+
+  my $mountListR = $self->{MOUNTLIST};
+  $$mountListR{$tm} = $mount;
+
+  return $self->mount($mount);
+}
+
+
 sub startMounting {
   my $self = shift;
   my $tm = shift;
@@ -631,7 +722,7 @@ sub startPositioning {
   my $mount = $self->mount;
   if (defined($mount)) {
     $self->pushState('POS', $tm);
-    $self->mount->startPositioning($fileNumber, $tm);
+#    $self->mount->startPositioning($fileNumber, $tm);
   }
   return $mount;
 }
@@ -643,7 +734,7 @@ sub positioned {
   my $mount = $self->mount;
   if (defined($mount)) {
     $self->popState($tm);
-    $self->mount->positioned($tm);
+#    $self->mount->positioned($tm);
   }
   return $mount;
 }
@@ -673,7 +764,7 @@ sub type {
   return $self->{TYPE};
 }
 
-my @jobStates = ("queued", "active", "re-queued", "done");
+my @jobStates = ("queued", "active", "re-queued", "done", undef, "incomplete");
 sub state {
   my $self = shift;
 
@@ -781,9 +872,29 @@ sub mount {
   my $self = shift;
 
   if (@_) {
-    $self->{MOUNT} = shift;
+    my $newMount = shift;
+    if (defined(my $currentMount = $self->{MOUNT})) {
+      $self->{MOUNT} = undef;
+      if (defined($newMount)) {
+	$currentMount->unmount($newMount->start);
+      }
+      else {
+print STDERR "unmounting without unmount time!\n" if (!$currentMount->stop);
+      }
+    }
+    $self->{MOUNT} = $newMount;
   }
   return $self->{MOUNT};
+}
+
+sub read {
+  my $self = shift;
+  my ($fragment, $size, $speed) = @_;
+
+  $self->{SIZE} += $size;
+  $self->mount->read($fragment, $size, $speed);
+
+  return $self;
 }
 
 sub write {
@@ -796,17 +907,69 @@ sub write {
   return $self;
 }
 
-sub ioStats {
+sub networkReadStats {
   my $self = shift;
 
   if (@_) {
-    my ($noBuffer, $noData, $bytesRead) = @_;
+    my ($noBuffer, $count) = @_;
 
-    $self->{NOBUFFER} = $noBuffer;
-    $self->{NODATA} = $noData;
+    $self->{NOEMPTYBUFFER} = $noBuffer;
+    $self->{NOEMPTYDELAY} = $count;
   }
 
-  return ($self->{NOBUFFER}, $self->{NODATA}, $self->{SIZE});
+  return ($self->{NOEMPTYBUFFER}, $self->{NOEMPTYDELAY},
+	$self->{NOEMPTYDELAY} * $self->{EMPTYWAIT});
+}
+
+sub driveWriteStats {
+  my $self = shift;
+
+  if (@_) {
+    my ($noBuffer, $count) = @_;
+
+    $self->{NOFULLBUFFER} = $noBuffer;
+    $self->{NOFULLDELAY} = $count;
+  }
+
+  return ($self->{NOFULLBUFFER}, $self->{NOFULLDELAY},
+	$self->{NOFULLDELAY} * $self->{FULLWAIT});
+}
+
+sub dataBufferSize {
+  my $self = shift;
+
+  if (@_) {
+    my ($size) = @_;
+
+    $self->{BUFFERSIZE} = $size;
+  }
+
+  return ($self->{BUFFERSIZE});
+}
+
+sub dataBufferCount {
+  my $self = shift;
+
+  if (@_) {
+    my ($count) = @_;
+
+    $self->{BUFFERCOUNT} = $count;
+  }
+
+  return ($self->{BUFFERCOUNT});
+}
+
+sub delayCycles {
+  my $self = shift;
+
+  if (@_) {
+    my ($emptyWaitTime, $fullWaitTime) = @_;
+
+    $self->{EMPTYWAIT} = $emptyWaitTime / 1000;
+    $self->{FULLWAIT} = $fullWaitTime / 1000;
+  }
+
+  return ($self->{EMPTYWAIT}, $self->{FULLWAIT});
 }
 
 sub dataWritten {

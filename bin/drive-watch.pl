@@ -11,7 +11,7 @@ getopts('dM:i:n:', \%opts);
 if (defined($opts{'i'})) {
   $interval = $opts{'i'};
 }
-my $notify = "winkeler";
+my $notify = "";
 $notify .= ",".$opts{'n'} if ($opts{'n'});
 
 use NBU;

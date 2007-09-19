@@ -13,7 +13,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw(%robotLevel);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.20 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%robotLevel);
   @EXPORT_OK =   qw();
@@ -121,7 +121,10 @@ sub populate {
 	}
       }
     }
-    elsif (($self->host->NBUVersion eq "3.4.0") || ($self->host->NBUVersion eq "4.5.0")) {
+    elsif (($self->host->NBUVersion eq "3.4.0")
+        || ($self->host->NBUVersion eq "4.5.0")
+        || ($self->host->NBUVersion eq "5.1.0")
+                                               ) {
       while (<$pipe>) {
 	last if (/^===/);
       }

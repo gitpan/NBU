@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.15 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.17 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -78,7 +78,7 @@ sub populate {
     $stu->{TYPE} = $type;
 
     $stu->{MASTER} = $targetMaster;
-    $stu->{HOST} = NBU::Host->new($hostName);
+    my $host = $stu->{HOST} = NBU::Host->new($hostName);
 
     #
     # If this is a robot storage unit, we inform the robot so it can know which storage units
@@ -94,6 +94,7 @@ sub populate {
     elsif ($type == 2) {
       $stu->{DRIVECOUNT} = $count;
       $stu->{DENSITY} = $density;
+      $host->mediaManager(1);
     }
 
     $stu->{ONDEMAND} = $onDemand;
@@ -183,6 +184,17 @@ sub type {
   my $self = shift;
 
   return $self->{TYPE};
+}
+
+sub path {
+  my $self = shift;
+
+  if (@_) {
+    my $path = shift;
+    $self->{PATH} = $path;
+  }
+
+  return $self->{PATH};
 }
 
 sub density {
