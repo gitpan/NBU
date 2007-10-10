@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.26 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.27 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -157,6 +157,7 @@ sub loadConfig {
   unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
   if (/Client of ([\S]+)/) {
     $self->{MASTER} = NBU::Host->new($1);
+    NBU->addMaster($self->{MASTER});
   }
   else {
     $self->{MEDIASERVER} = 1;

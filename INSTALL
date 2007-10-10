@@ -37,7 +37,7 @@ your own however, you can simply alter the VERSION variable in Makefile.PL,
 re-create the Makefile itself and issues the command:
 	make dist
 
-As of $Date: 2003/01/06 13:47:07 $, NBU and/or its scripts and examples require the following
+As of $Date: 2007/09/24 17:15:17 $, NBU and/or its scripts and examples require the following
 additional modules from cpan:
 	Getopt::Std
 	IPC::Open2

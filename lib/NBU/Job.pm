@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.53 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.57 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -75,7 +75,7 @@ sub list {
   return (values %jobs);
 }
 
-my @jobTypes = ("Backup", "Archive", "Restore", undef, "Duplicate", "Import", "Catalog");
+my @jobTypes = ("Backup", "Archive", "Restore", undef, "Duplicate", "Import", "Catalog", "Vault", undef, undef, undef, undef, undef, undef, undef, undef, undef, "Image Cleanup");
 my $asOf;
 my $fromFile = $ENV{"HOME"}."/.alljobs.allcolumns";
 my ($jobPipe, $refreshPipe);
@@ -166,6 +166,7 @@ sub parseJob {
   if ($jobDescription =~ s/([^\\])\\,/${1} -/g) {
   }
 
+  my $KBWritten = 0;
   my (
     $jobID, $jobType, $state, $status, $className, $scheduleName, $clientName,
     $serverName, $started, $elapsed, $ended, $stUnit, $currentTry, $operation,
@@ -191,6 +192,7 @@ sub parseJob {
     $job->start($started);
 
     $job->{TYPE} = $jobTypes[$jobType] if ($jobType ne "");
+print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($job->{TYPE}));;
 
     $job->{STUNIT} = NBU::StorageUnit->byLabel($stUnit) if (defined($stUnit) && ($stUnit !~ /^[\s]*$/));
     my $backupID = $clientName."_".$started;
@@ -213,10 +215,18 @@ sub parseJob {
   #
   # Extract the list of paths (either in the class definition's include list
   # or the ones provided by the user.
+  # As of NBU 6.5 (possibly earlier), the path descriptions have gotten more verbose.
+  # Mostly this is a good thing, except that under certain circumstances these
+  # descriptions now contain commas!  Specifically, when we see a reference to FITYPE
+  # we automatically assume an FSTYPE clause followed and we pull it from the list of items
+  # in situ.
   my @paths;
   if (defined($pathListCount)) {
     for my $i (1..$pathListCount) {
       my $p = shift @rest;
+      if ($p =~ /FITYPE=/) {
+        $p .= ",".shift @rest;
+      }
       push @paths, $p;
     }
   }
@@ -248,6 +258,7 @@ sub parseJob {
 	}
 	else {
 	  ($dt, $tm, $dash, $msg) = split(/[\s]+/, $tryProgress, 4);
+          $AMPM = "";
 	}
 	my $mm;  my $dd;  my $yyyy;
 	if ($dt =~ /([\d]{1,2})\/([\d]{1,2})\/([\d]{4})/) {
@@ -310,20 +321,47 @@ sub parseJob {
 	elsif ($msg =~ /begin reading/) { }
 	elsif ($msg =~ /end reading/) { }
 	#
-	# This block of message headers provided by cpf on 10/27/2003.
-	# They were introduced with the advent of release 4.5 FP5
 	elsif ($msg =~ /Critical bp/) {  }
+	elsif ($msg =~ /Critical vlt/) {  }
 	elsif ($msg =~ /Error bp/) {  }
+	elsif ($msg =~ /Error vlt/) {  }
+	elsif ($msg =~ /Info bp/) {  }
+	elsif ($msg =~ /Info vlt/) {  }
+	elsif ($msg =~ /Info nbdelete/) {  }
 	elsif ($msg =~ /Warning bp/) {  }
+	elsif ($msg =~ /Warning vlt/) {  }
 	elsif ($msg =~ /begin Catalog/) {  }
+	elsif ($msg =~ /begin Eject and Report/) {  }
 	elsif ($msg =~ /begin Restore/) {  }
+	elsif ($msg =~ /begin Choosing Images/) {  }
+	elsif ($msg =~ /begin Duplicating Images/) {  }
 	elsif ($msg =~ /begin Duplicate/) {  }
+	elsif ($msg =~ /begin Import/) {  }
 	elsif ($msg =~ /end Catalog/) {  }
+	elsif ($msg =~ /end Eject and Report/) {  }
 	elsif ($msg =~ /end Restore/) {  }
 	elsif ($msg =~ /end Duplicate/) {  }
+	elsif ($msg =~ /end Choosing Images/) {  }
+	elsif ($msg =~ /end Duplicating Images/) {  }
+	elsif ($msg =~ /end Import/) {  }
 	elsif ($msg =~ /images required/) {  }
 	elsif ($msg =~ /media/) {  }
 	elsif ($msg =~ /started process/) {  }
+	elsif ($msg =~ /restarted as job/) {  }
+	#
+	# Additions as of NBU 6.5
+	elsif ($msg =~ /Error nbjm/) {  }
+	elsif ($msg =~ /begin  operation/) { }		# Extra space there on purpose: NB bug?
+	elsif ($msg =~ /end  operation/) { }		# Extra space there on purpose: NB bug?
+	elsif ($msg =~ /begin operation/) { }
+	elsif ($msg =~ /end operation/) { }
+	elsif ($msg =~ /requesting resource/) { }
+	elsif ($msg =~ /granted resource/) { }
+	elsif ($msg =~ /writing to path/) {  }
+	elsif ($msg =~ /path is /) {  }
+	elsif ($msg =~ /estimated [\d]+ kbytes needed/) {  }
+	elsif ($msg =~ /([\d]+) KB written/) { $KBWritten += $1; }
+	elsif ($msg =~ /number of files written/) {  }
 	else {
 print "$jobID\:$i\: $msg\n";
 	}
@@ -343,6 +381,8 @@ if (!defined($job->state)) {
     my $lastElapsed = $job->{ELAPSED} if (defined($job->{ELAPSED}));
 
     $job->{CURRENTFILE} = $currentFile;
+
+    $KBytesWritten = $KBWritten if ($KBWritten > 0);
 
     my $size = $job->{SIZE} = $KBytesWritten if ($KBytesWritten ne "");
     $job->{FILECOUNT} = $filesWritten if ($filesWritten ne "");
@@ -783,7 +823,7 @@ sub active {
 sub done {
   my $self = shift;
 
-  return ($self->{STATE} == 3);
+  return (($self->{STATE} == 3) || ($self->{STATE} == 5));
 }
 
 sub queued {

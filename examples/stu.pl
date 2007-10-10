@@ -16,5 +16,10 @@ NBU::StorageUnit->populate;
 
 foreach my $stu (NBU::StorageUnit->list) {
   print $stu->label." is of type ".$stu->type."\n";
-  print " ".$stu->driveCount." ".$stu->density." drives are controlled through ".$stu->robot->type." robot ".$stu->robot->id."\n";
+  if (($stu->type == 2) || ($stu->type == 3)) {
+    print " ".$stu->driveCount." ".$stu->density." drives are controlled through ".$stu->robot->type." robot ".$stu->robot->id."\n";
+  }
+  else {
+#    print " ".$stu->driveCount." ".$stu->density."\n";
+  }
 }

@@ -1,3 +1,9 @@
+For release 0.92
+First round of updates focused on support release 6.5  Most of these updates
+revolve parsing the much enhanced (but still hopelessly broken) output of
+bpdbjobs.  However, it looks like this time around there is enough of a cooky
+crumb trail to come up with some sort of speed analysis again.  Run nbutop.pl
+and enjoy!
 For release 0.91
 Bug fixes, of course; mostly related to changes in the output of various
 NetBackup tools as this release finally catches up with Veritas' release 5.1

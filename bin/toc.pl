@@ -7,9 +7,10 @@ use Getopt::Std;
 use NBU;
 
 my %opts;
-getopts('d?bRUe:', \%opts);
+getopts('dal?bRUe:', \%opts);
 
 NBU->debug($opts{'d'});
+NBU::Image->showEmptyFragments(defined($opts{'a'}));
 
 
 if ($opts{'?'} || ($#ARGV < 0)) {
@@ -30,6 +31,11 @@ foreach my $label (@ARGV) {
   my $m = NBU::Media->new($label);
 
   my $n = 0;
+
+  my $prefix = "";
+  $prefix .= $label if ($opts{'l'});
+  $prefix .= ":" if ($prefix ne "");
+
   foreach my $mpxList ($m->tableOfContents) {
     $n++;
 
@@ -38,14 +44,14 @@ foreach my $label (@ARGV) {
     my $mpx = 0;
     foreach my $fragment (@$mpxList) {
       if (@$mpxList > 1) {
-	printf("%3u.%02u:", $n, ++$mpx);
+	print $prefix; printf("%3u.%02u:", $n, ++$mpx);
       }
       else {
-	printf("%3u:", $n);
+	print $prefix; printf("%3u:", $n);
       }
 
       my $image = $fragment->image;
-      print "Fragment ".$fragment->number." of ".$image->class->name.
+      print "${prefix}Fragment ".$fragment->number." of ".$image->class->name.
 	    ($opts{'b'} ? " (".$image->id.")" : "").
 	    " written on ".$fragment->driveWrittenOn." from ".$image->client->name.": ";
       print $fragment->offset."/".$fragment->size.": ";
@@ -61,7 +67,7 @@ foreach my $label (@ARGV) {
 	my @list = $image->fileList;
 	@list = (sort @list) unless ($opts{'U'});
 	for my $f (@list) {
-	  print "      $f\n";
+	  print "$prefix      $f\n";
 	}
       }
     }

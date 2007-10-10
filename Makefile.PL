@@ -3,15 +3,14 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.91',
+            'VERSION'         => '0.92',
 	    'PREREQ_PM' => { 
-	      Getopt::Std           => undef,
-	      IPC::Open2            => undef,
-	      Date::Parse           => undef,
-	      Time::Local           => undef,
-	      Curses                => undef,
-	      XML::XPath::XMLParser => undef,
-	      XML::XPath            => undef,
+	      Getopt::Std           => '1.02',
+	      IPC::Open2            => '1.01',
+	      Date::Parse           => '2.27',
+	      Time::Local           => '1.11',
+	      Curses                => '1.16',
+	      XML::XPath            => '1.13',
 	    },
 
             'EXE_FILES'       => [

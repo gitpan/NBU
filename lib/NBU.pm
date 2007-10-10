@@ -34,7 +34,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.36 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.37 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -257,7 +257,7 @@ sub loadClusterInformation {
   $master = $me = NBU::Host->new($myName);  $myName = $me->name;
   $master = $me->clientOf
     if ($me->clientOf);
-  push @knownMasters, $master;
+  NBU->addMaster($master);
   $NBUVersion = $me->NBUVersion;
 
   close($pipe);
@@ -267,13 +267,12 @@ sub loadClusterInformation {
     if (/SERVER = ([\S]+)/) {
       my $serverName = $1;
       my $server = NBU::Host->new($serverName);
-      push @servers, $server;
+      NBU->addServer($server);
     }
     if (/KNOWN_MASTER = ([^\s,]+)/) {
       my $serverName = $1;
       my $server = NBU::Host->new($serverName);
-      push @knownMasters, $server
-	unless ($server == $master);
+      NBU->addMaster($server);
     }
   }
   close($pipe);
@@ -294,6 +293,28 @@ sub loadClusterInformation {
   ) = split;
   $email = undef if ($email eq "*NULL*");
   $adminAddress = $email;
+}
+
+sub addMaster {
+  my $proto = shift;
+
+  if (defined(my $newMaster = shift)) {
+    for my $m (@knownMasters) {
+      return if ($m == $newMaster);
+    }
+    push @knownMasters, $newMaster;
+  }
+}
+
+sub addServer {
+  my $proto = shift;
+
+  if (defined(my $newServer = shift)) {
+    for my $s (@servers) {
+      return if ($s == $newServer);
+    }
+    push @servers, $newServer;
+  }
 }
 
 sub masters {

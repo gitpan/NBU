@@ -13,12 +13,13 @@ use NBU::Media;
 my %imageList;
 
 my $fileRecursionDepth = 1;
+my $showEmptyFragments = 0;
 
 BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.27 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.30 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -265,6 +266,12 @@ sub loadImages {
 	  $mediaType, $density, $fileNumber,
           $rest) = split(/[\s]+/, $_, 9);
 
+      #
+      # The fragment list contains empty fragments which are left-overs from
+      # failed backups.  Normally we skip these, but they can be made visible
+      # when running diagnostics
+      next if (!$showEmptyFragments && ($size == 0));
+
       my ($mediaID, $volume);
       if (($removable == 0) && ($mediaType == 0)) {
         #
@@ -286,6 +293,7 @@ sub loadImages {
         $volume = NBU::Media->new($mediaID, undef, 1);
         $volume->density($density);
       }
+      $rest =~ s/^[\s]*//;
       my ($mmdbHostName,
 	  $blockSize, $offset, $allocated, $dwo,
 	  $u6, $u7,
@@ -380,6 +388,16 @@ sub density {
   }
 
   return $NBU::Media::densities{$self->{DENSITY}};
+}
+
+sub showEmptyFragments {
+  my $proto = shift;
+
+  if (@_) {
+    $showEmptyFragments = shift;
+  }
+
+  return $showEmptyFragments;
 }
 
 sub fileRecursionDepth {

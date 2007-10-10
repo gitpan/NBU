@@ -61,7 +61,7 @@ while (<STDIN>) {
     if ($volume->errorCount) {
       $status .= $volume->errorCount." errors: ";
     }
-    if (exists($opts{'e'})) {
+    if (exists($opts{'e'}) && defined($volume->errorCount)) {
       if ($opts{'e'} == 0) {
         $reportOn &&= ($volume->errorCount == 0)
       }

@@ -330,25 +330,23 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
     my $jobDescription = "$who $classID $jid $displayTime ".$job->operation;
 
     my $speed;
-    if (defined($job->volume)) {
-      $jobDescription .= " ".$job->volume->id;
-      $jobDescription .= " ".sprintf("%6d", int($job->dataWritten/1024));
-      if (defined($speed = ($instant ? $job->ispeed : $job->speed))) {
-	$speed /= 1024;
-        $jobDescription .= " ".sprintf("%5.2f", $speed)
-	  if ($job->elapsedTime);
-      }
-      else {
-        $jobDescription .= " --.--";
-      }
-      
+    $jobDescription .= " ".sprintf("%8s", (defined($job->volume) ? $job->volume->id : ""));
+    $jobDescription .= " ".sprintf("%6d", int($job->dataWritten/1024));
+    if (defined($speed = ($instant ? $job->ispeed : $job->speed))) {
+      $speed /= 1024;
+      $jobDescription .= " ".sprintf("%5.2f", $speed)
+	if ($job->elapsedTime);
+    }
+    else {
+      $jobDescription .= " --.--";
+    }
+    
 
-      $jobDescription .= " ".sprintf("%10s", defined($job->storageUnit) ? $job->storageUnit->label : "");
+    $jobDescription .= " ".sprintf("%10s", defined($job->storageUnit) ? $job->storageUnit->label : "");
 
-      if (!$opts{'r'}) {
-	if ($job->volume->drive) {
-	  $jobDescription .= sprintf(":%2d", $job->volume->drive->index);
-	}
+    if (!$opts{'r'} && defined($job->volume)) {
+      if ($job->volume->drive) {
+	$jobDescription .= sprintf(":%2d", $job->volume->drive->index);
       }
     }
 
@@ -387,7 +385,7 @@ while (!$passLimit || ($refreshCounter <= $passLimit)) {
 
   $totalSpeed = sprintf("%.2f", $totalSpeed);
   $totalWireSpeed = sprintf("%.2f", $totalWireSpeed);
-  $win->addstr(1, 0, ($instant ? "Instantaneous" : "Cumulative")." throughput ${totalSpeed}Mb/s; Network load ${totalWireSpeed}Mb/s");
+  $win->addstr(1, 0, ($instant ? "Instantaneous" : "Cumulative")." throughput ${totalSpeed}Mb/s; Network load ${totalWireSpeed}MB/s");
 
   $win->refresh;
 
