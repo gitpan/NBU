@@ -17,7 +17,7 @@ BEGIN {
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
   use vars       qw(%densities %mediaTypes);
-  $VERSION =	 do { my @r=(q$Revision: 1.39 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.45 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw(%densities);
   @EXPORT_OK =   qw();
@@ -102,17 +102,22 @@ sub new {
   if (@_) {
     my $mediaID = shift;
     my $voldbHost = shift;
-    my $removable = shift;
 
     if (exists($mediaList{$mediaID})) {
-      return $mediaList{$mediaID};
+      $media = $mediaList{$mediaID};
     }
-
-    $media->{VOLDBHOST} = $voldbHost;
-    $media->{RVSN} = $mediaID;
-    $mediaList{$media->{RVSN}} = $media;
-
-    $media->{REMOVABLE} = $removable;
+    else {
+      $media->{VOLDBHOST} = $voldbHost;
+      $media->{RVSN} = $mediaID;
+      $mediaList{$media->{RVSN}} = $media;
+    }
+    if (@_) {
+      my $removable = shift;
+      $media->{REMOVABLE} = $removable;
+    }
+    else {
+      $media->{REMOVABLE} = 1;
+    }
   }
   return $media;
 }
@@ -141,7 +146,12 @@ sub populate {
   my @masters = NBU->masters;  my $master = $masters[0];
   $voldbHosts{$master->name} = $master;
   foreach my $ms (NBU::StorageUnit->mediaServers($master)) {
-    $voldbHosts{$ms->name} = $ms;
+    if (defined(my $EMMserver = $ms->EMMserver)) {
+      $voldbHosts{$EMMserver->name} = $EMMserver;
+    }
+    else {
+      $voldbHosts{$ms->name} = $ms;
+    }
   }
 
   foreach my $voldbHost (values %voldbHosts) {
@@ -396,7 +406,7 @@ sub density {
     $self->{DENSITY} = $density;
   }
 
-  return $densities{$self->{DENSITY}};
+  return $self->removable ? $densities{$self->{DENSITY}} : "disk";
 }
 
 sub retention {
@@ -1083,7 +1093,7 @@ sub eject {
 sub removable {
   my $self = shift;
 
-  return !(defined($self->{REMOVABLE}) && !$self->{REMOVABLE});
+  return (defined($self->{REMOVABLE}) ? $self->{REMOVABLE} : 0);
 }
 
 #
@@ -1093,8 +1103,9 @@ sub insertFragment {
   my $index = shift;
   my $fragment = shift;
   
+  #
+  # The table of contents has one entry per file on the tape
   $self->{TOC} = [] if (!defined($self->{TOC}));
-
   my $toc = $self->{TOC};
 
   #
@@ -1102,6 +1113,10 @@ sub insertFragment {
   # contain a single fragment so we force the index to zero.
   $index = 0 if (!$self->removable);
 
+  #
+  # In turn, a file on the tape can contain multiple fragments of images
+  # whenever multiplexing is enabled, hence we keep so-called mpx lists for each
+  # file.
   $$toc[$index] = [] if (!defined($$toc[$index]));
   my $mpxList = $$toc[$index];
   push @$mpxList, $fragment;
@@ -1135,3 +1150,48 @@ sub tableOfContents {
 1;
 
 __END__
+
+=head1 NAME
+
+NBU::Media - Every backup volume is represented by an NBU::Media object
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+

@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.3 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.6 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -36,10 +36,9 @@ sub new {
     my $server = shift;
     my $key = shift;
 
-    my $uniqueKey = $server->name.":".$key;
 
-    if (exists($licenses{$uniqueKey})) {
-      return $licenses{$uniqueKey};
+    if (exists($licenses{$key})) {
+      return $licenses{$key};
     }
 
     $License->{KEY} = $key;
@@ -47,7 +46,9 @@ sub new {
 
     $License->{FEATURES} = [];
 
-    $licenses{$uniqueKey} = $License;
+    $License->{INSTALLS} = {};
+
+    $licenses{$key} = $License;
   }
 
   return $License;
@@ -74,25 +75,29 @@ sub populate {
     die "Could not open license pipe\n" unless my $pipe = NBU->cmd("bpminlicense -M ".$master->name." -nb_features -verbose |");
     my $l;
     my ($baseKey, $key);
+    my ($installHost, $installDate);
     while (<$pipe>) {
       chop; s/[\s]*$//;
       if (/^[\S]+/) {
+        $l->install($installHost, $installDate) if (defined($l));
 	($baseKey, $key) = split;
-	$l = $proto->new($master, $key, $baseKey);
+	$l = $proto->new($master, $baseKey, $key);
 	next;
       }
       if (/^  file version[\s]+= ([\S]+)$/) {
 	$l->{FILEVERSION} = $1;
 	next;
       }
+
       if (/^  time added[\s]+= ([\S]+) (.*)$/) {
-	$l->{ADDED} = str2time($2);
+	$installDate = str2time($2);
 	next;
       }
       if (/^  hostname[\s]+= ([\S]+)$/) {
-	$l->{HOST} = NBU::Host->new($1);
+	$installHost = NBU::Host->new($1);
 	next;
       }
+
       if (/^  product ID[\s]+= ([\S]+) (.*)$/) {
 	my $id = $1;
 	my $description = $2;
@@ -157,7 +162,9 @@ sub populate {
       print STDERR "Unknown line in bpminlicense output: \"$_\"\n";
       $legit{$master->name} += 1;
     }
+    $l->install($installHost, $installDate);
     close($pipe);
+
 
     #
     # If we're inspecting a master, retrieve license keys from active
@@ -171,10 +178,19 @@ sub populate {
   }
 }
 
-sub host {
+sub install {
   my $self = shift;
+  my ($host, $date) = @_;
 
-  return $self->{HOST};
+  my $installs = $self->{INSTALLS};
+  $$installs{$host->name} = $date;
+}
+
+sub hosts {
+  my $self = shift;
+  my $installs = $self->{INSTALLS};
+
+  return (keys %$installs);
 }
 
 sub key {
@@ -297,3 +313,48 @@ sub featureDescription {
 1;
 
 __END__
+
+=head1 NAME
+
+NBU::License - Support for NetBackup licensing information gathering
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+

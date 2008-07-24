@@ -17,6 +17,7 @@ EOT
 }
 
 use NBU;
+
 NBU->debug($opts{'d'});
 
 my $period = 1;
@@ -57,6 +58,9 @@ if ($#ARGV > -1 ) {
     my $p = NBU::Class->byName($policyName);
     push @list, $p if (defined($p));
   }
+}
+else {
+  @list = NBU::Class->list();
 }
 
 my $totalImages = 0;

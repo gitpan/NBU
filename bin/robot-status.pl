@@ -25,7 +25,8 @@ else {
 }
 
 foreach my $stu (NBU::StorageUnit->list($master)) {
-  NBU::Drive->populate($stu->host);
+  NBU::Drive->populate($stu->host)
+    unless (!defined($stu->host));
 }
 
 for my $robot (NBU::Robot->farm) {

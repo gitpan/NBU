@@ -20,4 +20,5 @@ for my $s (NBU->masters) {
 }
 print " acts as master and job notifications are ";
 print !defined(NBU->adminAddress) ? "not sent out" : "sent to ".NBU->adminAddress;
+print "\nMaximum ".NBU->maxJobsPerClient." jobs per client\n";
 print "\n";

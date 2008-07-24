@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.17 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.21 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -78,13 +78,20 @@ sub populate {
     $stu->{TYPE} = $type;
 
     $stu->{MASTER} = $targetMaster;
-    my $host = $stu->{HOST} = NBU::Host->new($hostName);
+    if ($hostName !~ /_STU_NO_DEV_HOST/) {
+      my $mm = $stu->{HOST} = NBU::Host->new($hostName);
 
-    #
-    # If this is a robot storage unit, we inform the robot so it can know which storage units
-    # make use of its services.
-    if (defined(my $robot = $stu->{ROBOT} = NBU::Robot->new($robotNumber, $robotType, undef))) {
-      $robot->known($stu);
+      $mm->mediaManager(1);
+
+      #
+      # If this is a robot storage unit, we inform the robot so it can know which storage units
+      # make use of its services.
+      if (defined(my $robot = $stu->{ROBOT} = NBU::Robot->new($robotNumber, $robotType, undef))) {
+        $mm->roboticMediaManager(1);
+	$robot->known($stu);
+      }
+      else {
+      }
     }
 
     if ($type == 1) {
@@ -94,7 +101,6 @@ sub populate {
     elsif ($type == 2) {
       $stu->{DRIVECOUNT} = $count;
       $stu->{DENSITY} = $density;
-      $host->mediaManager(1);
     }
 
     $stu->{ONDEMAND} = $onDemand;
@@ -173,7 +179,11 @@ sub mediaServers {
   my %names;
   my @list;
   for my $su ($proto->list($targetMaster)) {
-    push @list, $su->host if (!exists($names{$su->host->name}));
+    next if (!defined($su->host));
+
+    if (!exists($names{$su->host->name})) {
+      push @list, $su->host;
+    }
     $names{$su->host->name} += 1;
   }
 
@@ -228,7 +238,7 @@ sub onDemand {
 }
 
 #
-# NBU stores the maximum number of multiplexed jobs per drive but this routine
+# NBU stores the maximum number of multiplexed jobs per storage unit but this routine
 # maps the degenerate case to 0 so a simple test for multi-plexing can be done on its
 # return value
 sub mpx {
@@ -250,3 +260,48 @@ sub maximumFragmentSize {
 
 1;
 __END__
+
+=head1 NAME
+
+NBU::StorageUnit - Provide Access to NetBackup Storage Unit information and configuration
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+

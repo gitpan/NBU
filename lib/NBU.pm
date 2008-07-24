@@ -34,7 +34,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.37 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.42 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT_OK =   qw();
   %EXPORT_TAGS = qw();
@@ -54,7 +54,6 @@ if (exists($ENV{"WINDIR"})) {
 
   $sudo = "";
 
-  $PS = "\\";
 
   require Win32::TieRegistry || die "Cannot require Win32::TieRegistry!";
 
@@ -69,20 +68,26 @@ if (exists($ENV{"WINDIR"})) {
   my($PATHS) = "HKEY_LOCAL_MACHINE\\SOFTWARE\\VERITAS\\NetBackup\\CurrentVersion\\Paths";
 
   $PS = $_ps = $Registry->{ $PATHS . "\\_ps" };
+  if (!defined($PS)) {
+    print STDERR "NetBackup not installed?\n";
+    $NBdir = $MMdir = "";
+    $PS = "/";
+  }
+  else {
+    $NBdir = $Registry->{ $PATHS . "\\_ov_fs"       } . "\\\\" .
+	     $Registry->{ $PATHS . "\\SM_DIR"       } . "\\\\" .
+	     $Registry->{ $PATHS . "\\BP_DIR_NAME"  };
+    $NBdir =~ s/\$\{_ps\}/$PS/g;
+    $NBdir =~ s/ /\\ /g;
+    $NBdir =~ s/([a-zA-Z]):/\/cygdrive\/$1/;
 
-  $NBdir = $Registry->{ $PATHS . "\\_ov_fs"       } . "\\\\" .
-           $Registry->{ $PATHS . "\\SM_DIR"       } . "\\\\" .
-	   $Registry->{ $PATHS . "\\BP_DIR_NAME"  };
-  $NBdir =~ s/\$\{_ps\}/$PS/g;
-  $NBdir =~ s/ /\\ /g;
-  $NBdir =~ s/([a-zA-Z]):/\/cygdrive\/$1/;
-
-  $MMdir =  $Registry->{ $PATHS . "\\_ov_fs"       } . "\\\\" .
-	    $Registry->{ $PATHS . "\\SM_DIR"       } . "\\\\" .
-	    $Registry->{ $PATHS . "\\VM_DIR_NAME"  };
-  $MMdir =~ s/\$\{_ps\}/$PS/g;
-  $MMdir =~ s/ /\\ /g;
-  $MMdir =~ s/([a-zA-Z]):/\/cygdrive\/$1/;
+    $MMdir =  $Registry->{ $PATHS . "\\_ov_fs"       } . "\\\\" .
+	      $Registry->{ $PATHS . "\\SM_DIR"       } . "\\\\" .
+	      $Registry->{ $PATHS . "\\VM_DIR_NAME"  };
+    $MMdir =~ s/\$\{_ps\}/$PS/g;
+    $MMdir =~ s/ /\\ /g;
+    $MMdir =~ s/([a-zA-Z]):/\/cygdrive\/$1/;
+  }
 }
 else {
   if (-e ($NBP = "/usr/openv")) {
@@ -144,8 +149,16 @@ my %cmdList = (
   bpclntcmd => $sudo."${NBdir}${PS}bin${PS}bpclntcmd",
   bpconfig => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpconfig",
   bpgetconfig => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpgetconfig",
-  bpcllist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpcllist",
-  bpclclients => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpclclients",
+  bpclient => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpclient",
+
+  bpcllist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bppllist",
+  bpclinfo => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpplinfo",
+  bpclclients => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpplclients",
+
+  bppllist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bppllist",
+  bpplinfo => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpplinfo",
+  bpplclients => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpplclients",
+
   bpcoverage => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpcoverage",
   bpflist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpflist",
   bpmedialist => $sudo."${NBdir}${PS}bin${PS}admincmd${PS}bpmedialist",
@@ -168,6 +181,7 @@ my %cmdList = (
   vmupdate => $sudo."${MMdir}${PS}bin${PS}vmupdate",
   vmglob => $sudo."${MMdir}${PS}bin${PS}vmglob",
 );
+
 
 my $vmchangeDelay = 1;
 my $lastChange = 0;
@@ -233,7 +247,19 @@ sub cmd {
 }
 
 my ($me, $master, @servers, @knownMasters);
-my $adminAddress;
+my (
+  $adminAddress, $wakeupInterval,
+  $retryPeriod,
+  $maxClientJobs,
+  $retryCount,
+  $logFileRetentionPeriod,
+  $u1, $u2, $u3, $u4,
+  $immediatePostProcess,
+  $reportDisplayWindow,
+  $TIRRetentionPeriod,
+  $prepInterval
+);
+
 sub loadClusterInformation {
 
   my $myName = "localhost";
@@ -278,21 +304,21 @@ sub loadClusterInformation {
   close($pipe);
 
   $pipe = NBU->cmd("bpconfig -M ".$master->name." -l |");
-  $_ = <$pipe>;
-  my (
-    $email, $wakeupInterval,
-    $retryPeriod,
-    $maxClientJobs,
-    $retryCount,
-    $logFileRetentionPeriod,
-    $u1, $u2, $u3, $u4,
-    $immediatePostProcess,
-    $reportDisplayWindow,
-    $TIRRetentionPeriod,
-    $prepInterval
-  ) = split;
-  $email = undef if ($email eq "*NULL*");
-  $adminAddress = $email;
+  if (defined($_ = <$pipe>)) {
+    (
+      $adminAddress, $wakeupInterval,
+      $retryPeriod,
+      $maxClientJobs,
+      $retryCount,
+      $logFileRetentionPeriod,
+      $u1, $u2, $u3, $u4,
+      $immediatePostProcess,
+      $reportDisplayWindow,
+      $TIRRetentionPeriod,
+      $prepInterval
+    ) = split;
+    $adminAddress = undef if ($adminAddress eq "*NULL*");
+  }
 }
 
 sub addMaster {
@@ -350,6 +376,13 @@ sub adminAddress {
 
   loadClusterInformation() if (!defined($me));
   return $adminAddress;
+}
+
+sub maxJobsPerClient {
+  my $proto = shift;
+
+  loadClusterInformation() if (!defined($me));
+  return $maxClientJobs;
 }
 
 my $msgsLoaded;

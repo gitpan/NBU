@@ -3,7 +3,7 @@ use ExtUtils::MakeMaker;
 
 my %args = (
             'NAME'	      => 'NBU',
-            'VERSION'         => '0.92',
+            'VERSION'         => '0.95',
 	    'PREREQ_PM' => { 
 	      Getopt::Std           => '1.02',
 	      IPC::Open2            => '1.01',

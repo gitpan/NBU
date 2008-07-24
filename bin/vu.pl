@@ -24,10 +24,24 @@ for my $image (@l) {
   next if (!defined($image->size));
 
   my $size = $image->size / 1024;
-  $retentionTotal{$image->density.":".$image->retention->level} += $size;
-  if (!exists($inUse{$image->volume->id})) {
-    $retentionVolumes{$image->density.":".$image->retention->level} += 1;
-    $inUse{$image->volume->id} = +1;
+
+  my $rlc = $image->density.":".$image->retention->level;
+  $retentionTotal{$rlc} += $size;
+
+  #
+  # To ensure we only count each volume once (it may contain many
+  # images) we tag each one.  The tag is further qualified with the
+  # volume's retention level and density since occasionally things
+  # change over time and a single volume gets re-used across different
+  # retention levels and/or densities...
+  if (!exists($inUse{$rlc.$image->volume->id})) {
+    if (!exists($retentionVolumes{$rlc})) {
+      $retentionVolumes{$rlc} = 1;
+    }
+    else {
+      $retentionVolumes{$rlc} += 1;
+    }
+    $inUse{$rlc.$image->volume->id} = +1;
   }
   $total += $size;
 }

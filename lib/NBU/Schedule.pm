@@ -12,7 +12,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.11 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.15 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -39,8 +39,6 @@ sub new {
 
   if (defined(my $pipe = shift)) {
 
-    my $extra = shift;
-
     #
     # Read in one line with 7 pairs of window start and length numbers; record them as a 7
     # element array of arrays.
@@ -58,7 +56,7 @@ sub new {
 
     $_ = <$pipe>;  return undef if (!/^SCHEDRES/);
     my (@residences) = split;
-    $schedule->{STUNIT} = NBU::StorageUnit->byLabel($residences[0]) if ($residences[0] ne "*NULL*");
+    $schedule->{STUNIT} = NBU::StorageUnit->byLabel($residences[1]) if ($residences[1] ne "*NULL*");
 
     $_ = <$pipe>;  return undef if (!/^SCHEDPOOL/);
     my (@pools) = split;
@@ -70,8 +68,8 @@ sub new {
     $schedule->{RETENTION} = NBU::Retention->byLevel($retentionLevel);
 
     #
-    # Triggered by presence of the FOE tag in the parent Policy definition
-    if ($extra) {
+    # Triggered by presence of the Fail On Error (FOE) tag in the Schedule definition
+    if ($_[8]) {
       $_ = <$pipe>;  return undef if (!/^SCHEDRL/);
       $_ = <$pipe>;  return undef if (!/^SCHEDFOE/);
     }
@@ -84,6 +82,12 @@ sub name {
   my $self = shift;
 
   return $self->{NAME};
+}
+
+sub policy {
+  my $self = shift;
+
+  return $self->{CLASS};
 }
 
 sub class {
@@ -129,12 +133,63 @@ sub pool {
   return defined($self->{POOL}) ? $self->{POOL} : $self->class->pool;
 }
 
-sub storageUnit {
+sub residence {
   my $self = shift;
 
   return defined($self->{STUNIT}) ? $self->{STUNIT} : $self->class->storageUnit;
 }
 
+sub storageUnit {
+  my $self = shift;
+
+  return $self->residence(@_);
+}
+
 1;
 
 __END__
+
+=head1 NAME
+
+NBU::Schedule - Model policy (formerly Class) execution schedules
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+

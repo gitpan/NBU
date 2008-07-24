@@ -77,6 +77,8 @@ sub listSchedules {
   if (@sl) {
     for my $s (@sl) {
       my $scheduleName = $s->name;
+      my $maximumMPX = $s->maximumMPX;
+      my $residence = $s->residence;
       my ($header, $footer);
       if ($opts{'x'}) {
 	my $f = $s->frequency;
@@ -104,7 +106,10 @@ sub listSchedules {
 	  $sep = ";";
 	}
 
-	$header = "<schedule name=\"$scheduleName\" type=\"".$s->type."\" frequency=\"$frequency\">\n";
+	$header = "<schedule name=\"$scheduleName\" type=\"".$s->type."\" frequency=\"$frequency\"";
+	$header .= " storage-unit=\"".$residence->label."\"" if (defined($residence));
+	$header .= " mpx=\"$maximumMPX\"" if (defined($maximumMPX));
+	$header .= ">\n";
 	$footer = "</schedule>\n";
       }
       else {
@@ -125,7 +130,7 @@ sub listSchedules {
         print $lastHeader.$prefix.$header;
 	$eCounter += 1;
       }
-      print $footer if ($eCounter);
+      print $prefix.$footer if ($eCounter);
       $lastHeader = "";
     }
   }
@@ -259,7 +264,8 @@ for my $c (@list) {
   if ($opts{'x'}) {
     $header = "<policy name=\"$policyDescription\"";
     $header .= " type=\"".$c->type."\"";
-    $header .= " storage-unit=\"".$c->storageUnit->label."\"" if (defined($c->storageUnit));
+    $header .= " storage-unit=\"".$c->residence->label."\"" if (defined($c->residence));
+    $header .= " maxjobs=\"".$c->maxJobs."\"" if ($c->maxJobs != 2147483647);
     $header .= ">\n";
     $footer = "</policy>\n";
   }

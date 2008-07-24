@@ -19,7 +19,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.30 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.39 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -107,10 +107,16 @@ sub client {
 sub class {
   my $self = shift;
 
+  return $self->policy(@_);
+}
+
+sub policy {
+  my $self = shift;
+
   if (@_) {
-    $self->{CLASS} = shift;
+    $self->{POLICY} = shift;
   }
-  return $self->{CLASS};
+  return $self->{POLICY};
 }
 
 sub schedule {
@@ -196,36 +202,42 @@ sub size {
 }
 
 #
-# Add another fragment to this image
+# Add another fragment to the referenced copy of this image
 sub insertFragment {
   my $self = shift;
+  my $copy = shift;
   my $fragment = shift;
   
-  $self->{FRAGMENTS} = [] if (!defined($self->{FRAGMENTS}));
-
-  my $toc = $self->{FRAGMENTS};
+  my $fragmentListR = $self->{FRAGMENTLISTS};
+  if (!defined(@$fragmentListR[$copy])) {
+    @$fragmentListR[$copy] = [];
+  }
+  my $toc = @$fragmentListR[$copy];;
 
   return $$toc[$fragment->number - 1] = $fragment;
 }
 
-sub loadFragments {
-  my $self = shift;
-
-  $self->{FRAGMENTS} = [] if (!defined($self->{FRAGMENTS}));
-
-  return $self;
-}
-
 sub fragments {
   my $self = shift;
-  my $fragment = shift;
-  
-  if (!defined($self->{FRAGMENTS})) {
-    $self->loadFragments;
+
+  my $fragmentListR = $self->{FRAGMENTLISTS};
+  if (@_) {
+    my $copy = shift;
+    if (!defined(@$fragmentListR[$copy])) {
+      return ();
+    }
+    my $toc = @$fragmentListR[$copy];;
+    return @$toc;
   }
 
-  my $toc = $self->{FRAGMENTS};
-  return @$toc;
+  my @toc;
+  foreach my $copy (1..$self->copies) {
+    if (defined(@$fragmentListR[$copy])) {
+      my $copytoc = @$fragmentListR[$copy];
+      @toc = (@toc, @$copytoc);
+    }
+  }
+  return @toc;
 }
 
 sub loadImages {
@@ -252,6 +264,8 @@ sub loadImages {
       $image->{FILECOUNT} = $fileCount;
       $image->{EXPIRES} = $expires;
       $image->{RETENTION} = NBU::Retention->byLevel($retentionLevel);
+      $image->{COPYCOUNT} = 0;
+      $image->{FRAGMENTLISTS} = [];
 
       my $class = $image->class(NBU::Class->new($className, $classType));
       $image->schedule(NBU::Schedule->new($class, $scheduleName, $scheduleType));
@@ -267,10 +281,17 @@ sub loadImages {
           $rest) = split(/[\s]+/, $_, 9);
 
       #
-      # The fragment list contains empty fragments which are left-overs from
+      # The fragment list contains failed fragments which are left-overs from
       # failed backups.  Normally we skip these, but they can be made visible
       # when running diagnostics
-      next if (!$showEmptyFragments && ($size == 0));
+      # Such fragments appear to be identified by having a negative fragment number
+      next if (!$showEmptyFragments && (($number < 1)));
+
+      #
+      # Is this the start of a new copy of this image?
+      if ($copy > $image->{COPYCOUNT}) {
+	$image->{COPYCOUNT} = $copy;
+      }
 
       my ($mediaID, $volume);
       if (($removable == 0) && ($mediaType == 0)) {
@@ -301,11 +322,13 @@ sub loadImages {
       ) = split(/[\s]+/, $rest);
       $volume->mmdbHost(NBU::Host->new($mmdbHostName));
 
-      my $fragment = NBU::Fragment->new($number, $image, $volume, $offset, $size, $dwo, $fileNumber, $blockSize);
+      my $fragment = NBU::Fragment->new($number, $copy, $image, $volume, $offset, $size, $dwo, $fileNumber, $blockSize);
 
       $volume->insertFragment($fileNumber - 1, $fragment);
-      $image->insertFragment($fragment);
-      $image->density($density);
+      $image->insertFragment($copy, $fragment);
+
+      $image->{REMOVABLE} += $volume->removable;
+
       $image->volume($volume);
     }
   }
@@ -344,7 +367,7 @@ sub loadFileList {
             $largeFileSize, # only set if file over 2GB; units are in GB
             $physicalDeviceNumber,
         $rest) = split(/[\s]+/, $_, 10);
-    if (!($rest =~ /^(.*)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]$/)) {
+    if (!($rest =~ /^(.*)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)[\s]([\S]+)/)) {
       print STDERR "IMAGE filename match failed on $_\n";
       exit;
     }
@@ -379,15 +402,28 @@ sub fileList {
   return undef;
 }
 
+sub copies {
+  my $self = shift;
+
+  return $self->{COPYCOUNT};
+}
+
+#
+# An image is considered removable if any of its fragments is
+# is stored on removable media.  This attribute is computed during
+# the loading if the image
+sub removable {
+  my $self = shift;
+
+  return $self->{REMOVABLE};
+}
+
 sub density {
   my $self = shift;
 
-  if (@_) {
-    my $density = shift;
-    $self->{DENSITY} = $density;
-  }
-
-  return $NBU::Media::densities{$self->{DENSITY}};
+  return $self->volume->density
+    if ($self->volume);
+  return undef;
 }
 
 sub showEmptyFragments {
@@ -425,3 +461,48 @@ sub volume {
 1;
 
 __END__
+
+=head1 NAME
+
+NBU::Image - Support for NetBackup Images, i.e. discrete backup sets
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+

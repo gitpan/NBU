@@ -1,6 +1,6 @@
-As of $Date: 2002/08/02 02:13:43 $ the list of things we'd like to add to this
+As of $Date: 2007/11/30 13:57:29 $ the list of things we'd like to add to this
 package are:
-- Tie Classes and Clients to their respctively required Licenses
+- Handle multiple volumes per image
 - Cover pending mount requests somewhere and possibly automate notification
   of interested parties
 - Do something useful with bplist.  But what?
@@ -19,4 +19,3 @@ package are:
   though carries more information and might be better used than the current -w
   layout
 - License analysis against class types and client counts
-

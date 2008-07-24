@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.57 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.64 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -192,7 +192,9 @@ sub parseJob {
     $job->start($started);
 
     $job->{TYPE} = $jobTypes[$jobType] if ($jobType ne "");
-print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($job->{TYPE}));;
+    if (NBU->debug) {
+	print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($job->{TYPE}));;
+    }
 
     $job->{STUNIT} = NBU::StorageUnit->byLabel($stUnit) if (defined($stUnit) && ($stUnit !~ /^[\s]*$/));
     my $backupID = $clientName."_".$started;
@@ -220,12 +222,15 @@ print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($jo
   # descriptions now contain commas!  Specifically, when we see a reference to FITYPE
   # we automatically assume an FSTYPE clause followed and we pull it from the list of items
   # in situ.
+  # Other times commas embedded in paths are escaped with a backslash.  As long as the path
+  # being constructed ends in a backslash, replace the comma and pull the next item from the
+  # list.
   my @paths;
   if (defined($pathListCount)) {
     for my $i (1..$pathListCount) {
       my $p = shift @rest;
-      if ($p =~ /FITYPE=/) {
-        $p .= ",".shift @rest;
+      while (($p =~ /\\$/) && ($p !~ /[^\\]\\\\$/)) {
+	$p .= ",".shift @rest;
       }
       push @paths, $p;
     }
@@ -252,6 +257,11 @@ print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($jo
       $elapsed = $tryElapsed;
       for my $t (1..$tryProgressCount) {
 	my $tryProgress = shift @tryRest;
+
+	if ($tryProgress =~ /\.\.\./) {
+	  next;
+	}
+
 	my ($dt, $tm, $AMPM, $dash, $msg);
 	if ($tryProgress =~ /[\s][AP]M[\s]/) {
 	  ($dt, $tm, $AMPM, $dash, $msg) = split(/[\s]+/, $tryProgress, 5);
@@ -268,21 +278,27 @@ print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($jo
 	  $yyyy = $3 + 2000;
 	}
 	else {
-	  print STDERR "No match on date?\n";
+	  print STDERR "No match on date during paring of job ".$job->id." for \"$dt\" from:\n$tryProgress\?\n";
 	  exit 0;
 	}
 	$mm = $1;  $dd = $2;
 
-	$tm =~ /([\d]{1,2}):([\d]{1,2}):([\d]{1,2})/;
-	my $h = $1;  my $m = $2;  my $s = $3;
+	$tm =~ /([\d]{1,2}):([\d]{1,2}):([\s\d]{0,2})/;
+	my $h = $1;  my $m = $2;  my $s = (($3 eq "") ? 0 : $3);
 	if (($AMPM =~ /PM/) && ($h != 12)) {
 	  $h += 12;
 	}
 	elsif (($AMPM =~ /AM/) && ($h == 12)) {
 	  $h -= 12;
 	}
+#print STDERR "$dt and $tm became $s, $m, $h, $d, $mm and $yyyy\n";
 	my $now = timelocal($s, $m, $h, $dd, $mm-1, $yyyy);
 
+	#
+	# Augment $msg string with more pieces as long as uncover embedded quoted commas
+	while (($msg =~ /\\$/) && ($msg !~ /[^\\]\\\\$/)) {
+	  $msg .= ",".shift @tryRest;
+	}
 
 	if ($msg =~ /connecting/) {
 	  $job->startConnecting($now);
@@ -348,6 +364,8 @@ print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($jo
 	elsif ($msg =~ /media/) {  }
 	elsif ($msg =~ /started process/) {  }
 	elsif ($msg =~ /restarted as job/) {  }
+	elsif ($msg =~ /restoring image ([\S]+)/) {  }
+	elsif ($msg =~ /restored image ([\S]+) -/) {  }
 	#
 	# Additions as of NBU 6.5
 	elsif ($msg =~ /Error nbjm/) {  }
@@ -357,11 +375,41 @@ print STDERR "Undefined job type \"$jobType\" for job $jobID\n" if (!defined($jo
 	elsif ($msg =~ /end operation/) { }
 	elsif ($msg =~ /requesting resource/) { }
 	elsif ($msg =~ /granted resource/) { }
-	elsif ($msg =~ /writing to path/) {  }
+	elsif ($msg =~ /writing to path/) { }
+	elsif ($msg =~ /ended process ([\d]+) \(([\d]+)\)/) { }
+
+	elsif ($msg =~ /snapshot client is ([\S]+) - snapshot method is ([\S]+)/) {
+	  my $clientName = $1;
+	  my $snapShotMethod = $2;
+	}
+	elsif ($msg =~ /collecting BMR information/) {  }
+	elsif ($msg =~ /transferring BMR information to the master server/) {  }
+	elsif ($msg =~ /BMR information transfer successful/) {  }
+
 	elsif ($msg =~ /path is /) {  }
-	elsif ($msg =~ /estimated [\d]+ kbytes needed/) {  }
+	elsif ($msg =~ /estimated ([-]?[\d]+) kbytes needed/) {  }
 	elsif ($msg =~ /([\d]+) KB written/) { $KBWritten += $1; }
 	elsif ($msg =~ /number of files written/) {  }
+	elsif ($msg =~ /waiting for vault session ID lock/) {  }
+	elsif ($msg =~ /vault session ID lock acquired/) {  }
+	elsif ($msg =~ /vault session ID lock released/) {  }
+	elsif ($msg =~ /waiting for vault duplication lock/) {  }
+	elsif ($msg =~ /vault duplication lock acquired/) {  }
+	elsif ($msg =~ /vault duplication lock released/) {  }
+	elsif ($msg =~ /waiting for vault assign slot lock/) {  }
+	elsif ($msg =~ /vault assign slot lock acquired/) {  }
+	elsif ($msg =~ /vault assign slot lock released/) {  }
+	elsif ($msg =~ /vault catalog backup started using policy "(.*)" and schedule "(.*)"/) {  }
+	elsif ($msg =~ /waiting for vault assign slot lock/) {  }
+	elsif ($msg =~ /vault assign slot lock acquired/) {  }
+	elsif ($msg =~ /vault assign slot lock released/) {  }
+	elsif ($msg =~ /waiting for vault eject lock/) {  }
+	elsif ($msg =~ /vault eject lock acquired/) {  }
+	elsif ($msg =~ /vault eject lock released/) {  }
+	elsif ($msg =~ /vault job lock released/) {  }
+	elsif ($msg =~ /vault duplication started - batch ([\d]+) of ([\d]+) for ([\d]+) images/) {  }
+	elsif ($msg =~ /vault duplication batch ([\d]+) of ([\d]+) completed.  ([\d]+) o. ([\d]+) images duplicated/) {  }
+	elsif ($msg =~ /vault catalog backup skipped/) {  }
 	else {
 print "$jobID\:$i\: $msg\n";
 	}
@@ -1075,3 +1123,48 @@ sub system {
 1;
 
 __END__
+
+=head1 NAME
+
+NBU::Job - Interface to NetBackup Job manipulation and reporting
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+

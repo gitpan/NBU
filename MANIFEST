@@ -29,6 +29,7 @@ examples/joblog.pl
 examples/pool-list.pl
 examples/stu.pl
 examples/licenses.pl
+examples/weekend.pl
 bin/history.pl
 bin/js.pl
 bin/robot-snapshot.pl

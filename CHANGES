@@ -1,3 +1,14 @@
+For release 0.93
+Second round of NBU 6.5 related fixes as well as some enhancements.  Most
+significantly, we are getting ready to use NBU to move beyond just inspecting
+and monitoring and start making changes to the running NetBackup environment!
+- "Gracefully" notice NetBackup is not installed
+- Handle multiple image copies by maintaining fragment lists for each one
+- Better license key analysis
+- Distinction between media managers and robotic media managers
+- Non-removable media forced to "disk" density
+- Some policy manipulation code
+	- activate / de-activate
 For release 0.92
 First round of updates focused on support release 6.5  Most of these updates
 revolve parsing the much enhanced (but still hopelessly broken) output of

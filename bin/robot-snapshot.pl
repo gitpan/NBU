@@ -157,8 +157,11 @@ for my $robot (@list) {
   my $emptyCount = 0;
   my $fullCount = 0;
 
-  my $nodeset = $xp->find('//robot[@id=\''.$r.'\']');
-  my $robotConfig = ($nodeset->size == 1) ? $nodeset->pop : undef;
+  my ($nodeset, $robotConfig);
+  if (defined($xp)) {
+    $nodeset = $xp->find('//robot[@id=\''.$r.'\']');
+    $robotConfig = ($nodeset->size == 1) ? $nodeset->pop : undef;
+  }
 
   if (defined($robotConfig)) {
     $nodeset = $robotConfig->find('pool[@name=\'NetBackup\']');

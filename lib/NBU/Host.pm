@@ -14,7 +14,7 @@ BEGIN {
   use Exporter   ();
   use AutoLoader qw(AUTOLOAD);
   use vars       qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS $AUTOLOAD);
-  $VERSION =	 do { my @r=(q$Revision: 1.27 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
+  $VERSION =	 do { my @r=(q$Revision: 1.33 $=~/\d+/g); sprintf "%d."."%02d"x$#r,@r };
   @ISA =         qw();
   @EXPORT =      qw();
   @EXPORT_OK =   qw();
@@ -48,6 +48,7 @@ sub new {
 
       $host->{ENROLLED} = 0;
       $host->{MM} = 0;
+      $host->{MMTYPE} = 0;
     }
   }
   return $host;
@@ -97,6 +98,15 @@ sub mediaManager {
     $self->{MM} = shift;
   }
   return $self->{MM};
+}
+
+sub roboticMediaManager {
+  my $self = shift;
+
+  if (@_) {
+    $self->{MMTYPE} = shift;
+  }
+  return $self->{MMTYPE};
 }
 
 sub loadClasses {
@@ -210,14 +220,31 @@ sub loadConfig {
   # which host was our master with the "Client of" line.  With 4.5 this
   # feature has been removed.  Now we run bpgetconfig against ourselves
   # and use the "first server in the list must be the master" rule.
-  if (!defined($self->{MASTER})) {
-    $pipe = NBU->cmd("bpgetconfig -X |");
-    while (<$pipe>) {
-      if (/SERVER = ([\S]+)/) {
-	$self->{MASTER} = NBU::Host->new($1);
-	last;
-      }
+  $pipe = NBU->cmd("bpgetconfig -X |");
+  while (<$pipe>) {
+    if ((/SERVER = ([\S]+)/) && !defined($self->{MASTER})) {
+      $self->{MASTER} = NBU::Host->new($1);
     }
+    if (/EMMSERVER = ([\S]+)/) {
+      $self->{EMMSERVER} = NBU::Host->new($1);
+    }
+  }
+  close($pipe);
+
+  my $detailAvailable;
+  $pipe = NBU->cmd("bpclient -All -FI |");
+  unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
+  while (<$pipe>) {
+    if (/$self->name/i) {
+      $detailAvailable = 1;
+      last;
+    }
+  }
+  close($pipe);
+
+  if ($detailAvailable) {
+    $pipe = NBU->cmd("bpclient -client ".$self->name." -l |");
+    unless (defined($_ = <$pipe>)) { close($pipe); return; } chop;  s/[\s]*$//;
     close($pipe);
   }
 }
@@ -227,6 +254,13 @@ sub clientOf {
 
   $self->loadConfig;
   return $self->{MASTER};
+}
+
+sub EMMserver {
+  my $self = shift;
+
+  $self->loadConfig;
+  return $self->{EMMSERVER};
 }
 
 sub platform {
@@ -266,6 +300,13 @@ sub NBUVersion {
   }
 
   return $self->{NBUVERSION};
+}
+
+sub NBUmajorVersion {
+  my $self = shift;
+
+  $self->NBUVersion =~ /^([\d])\.([\d\.]*$)/;
+  return $1;
 }
 
 sub IPaddress {
@@ -351,7 +392,7 @@ sub loadCoverage {
           push @$clR, $class;
         }
       }
-      elsif ($self->os =~ /Windows(NET|NT|2000|XP)/) {
+      elsif ($self->os =~ /Windows(NET|NT|2000|2003|XP)/) {
         $_ = $l;
         s/^[\s]*([\S].*:.)//;  my $mountPoint = $1;
         my (@remainder) = split;
@@ -440,3 +481,48 @@ sub images {
 1;
 
 __END__
+
+=head1 NAME
+
+NBU::Host - Implements support for clients, Media Servers and Masters alike
+
+=head1 SUPPORTED PLATFORMS
+
+=over 4
+
+=item * 
+
+Solaris
+
+=item * 
+
+Windows/NT
+
+=back
+
+=head1 SYNOPSIS
+
+    To come...
+
+=head1 DESCRIPTION
+
+This module provides support for ...
+
+=head1 SEE ALSO
+
+=over 4
+
+=item L<NBU::Media|NBU::Media>
+
+=back
+
+=head1 AUTHOR
+
+Winkeler, Paul pwinkeler@pbnj-solutions.com
+
+=head1 COPYRIGHT
+
+Copyright (C) 2002-2007 Paul Winkeler
+
+=cut
+
